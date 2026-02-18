@@ -140,6 +140,10 @@ Each token authorizes access to exactly one profile. A tool holding a token for 
 
 This is the primary secret scoping mechanism. The one-token-one-profile invariant holds regardless of the underlying credential type.
 
+### Revocation Event
+
+An explicit signal sent by the Guardian to a tool over a persistent connection (WebSocket, SSE, or long-polling), indicating that a previously-issued token or session has been revoked and any in-memory caches or authorized sessions derived from it must be immediately discarded. The revocation event includes the token identifier or session identifier and is semantically equivalent to a revocation-status response in request-response protocols. Revocation events are distinct from error responses: they are proactively sent by the Guardian without waiting for the tool to make a subsequent request. See [§3.6.4 TOPO-6a](03-threat-model.md#364-normative-requirements-for-remote-deployment) for the timing and format requirements.
+
 ## 4.4 Approval Terms
 
 ### Approval Policy

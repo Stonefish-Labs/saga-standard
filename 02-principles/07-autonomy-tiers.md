@@ -15,7 +15,7 @@ The approval modes referenced in each tier (`auto`, `prompt_once`, `prompt_alway
 | TIER-0-1 | MUST | Read approval policy MUST be `prompt_always` |
 | TIER-0-2 | MUST | Write approval policy MUST be `prompt_always` |
 | TIER-0-3 | MUST | Session caching MUST NOT be enabled |
-| TIER-0-4 | MUST | **Headless** (unattended) operation **MUST NOT** be used. *Definition:* **Headless operation** means the Guardian is running in an environment where no human principal is available to respond to interactive approval prompts in real time — for example, a CI/CD pipeline, a container orchestrator, a scheduled batch job, or a background daemon. The headless vs. interactive distinction determines whether interactive approval modes (`prompt_once`, `prompt_always`) can be used; it is orthogonal to whether the deployment is local or remote, single-machine or distributed. Where this standard requires headless mode to be "explicitly opted into," the mechanism is implementation-defined (environment variable, startup flag, or configuration setting) |
+| TIER-0-4 | MUST | **Headless** (unattended) operation **MUST NOT** be used. *Definition:* **Headless operation** means the Guardian is running in an environment where the human principal cannot respond to interactive approval prompts within the configured approval timeout (default: 5 minutes) — for example, a CI/CD pipeline, a container orchestrator, a scheduled batch job, or a background daemon where no human can attend to approval requests in the required window. Environments where a human can consistently respond within the configured timeout window are not headless. The headless vs. interactive distinction determines whether interactive approval modes (`prompt_once`, `prompt_always`) can be used; it is orthogonal to whether the deployment is local or remote, single-machine or distributed. Where this standard requires headless mode to be "explicitly opted into," the mechanism is implementation-defined (environment variable, startup flag, or configuration setting) |
 
 ### Use Cases
 
@@ -236,7 +236,7 @@ When reducing human oversight:
 2. Reduce token TTLs to the target tier's recommended range
 3. Increase audit review frequency
 4. Set up additional alerting as required by the target tier
-5. **MUST** operate at the target tier for a trial period of at least 7 days with enhanced monitoring before finalizing the transition. During the trial period, the previous tier's compensating controls **MUST** remain active in addition to the target tier's requirements
+5. **MUST** operate at the target tier for a trial period of at least 7 days with enhanced monitoring before finalizing the transition. During the trial period, the previous tier's compensating controls **MUST** remain active in addition to the target tier's requirements. At the end of the trial period, the deployment **SHOULD** review anomaly detection logs and access patterns before finalizing. If anomalies exceeding the target tier's configured baseline thresholds are detected during the trial period, the trial **MUST** be extended and the root cause **MUST** be investigated and resolved before the transition is finalized. De-escalation finalization **SHOULD** be recorded as a lifecycle event in the audit log
 
 ---
 
