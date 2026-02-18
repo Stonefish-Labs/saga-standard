@@ -117,6 +117,7 @@ The approval mechanism must use a channel that the agent cannot intercept or for
 | DLG-12 | MUST | Each entry MUST display its sensitivity classification. Entries marked `sensitive=true` MUST be visually distinguished (e.g., icon, color, label) |
 | DLG-13 | SHOULD | Dialog SHOULD display a risk-level summary based on profile approval policy and the sensitivity of requested entries |
 | DLG-14 | MUST | When a request includes entries not covered by an active `prompt_once` session, the dialog MUST show only the entries requiring new approval. Entries already in the session's approved set MUST NOT be re-prompted. The dialog SHOULD indicate that additional entries from the same profile were previously approved in the current session (see [§10.3 SESS-7](../part-3-architecture/10-approval-policies.md#103-session-approval-cache)) |
+| DLG-15 | MUST | Approval-path integrity MUST hold regardless of UI placement. A deployment is non-conformant if all three are simultaneously true on the same machine: (1) the user reads agent output, (2) the user approves a consequential decision, and (3) the agent runtime that produced the output executes there. In-line approval UX is permitted only when the agent cannot tamper with rendered approval content or transmitted decisions |
 
 ### Verification Code Design
 
