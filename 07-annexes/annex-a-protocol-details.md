@@ -347,7 +347,7 @@ This section provides JSON Schema definitions for the standard's data structures
 
 ### Audit Log Entry Schema
 
-> **Note:** The `action` field uses the namespaced taxonomy defined normatively in [§15.3](../part-5-reference/15-audit-observability.md#153-event-taxonomy) (`<operation>:<outcome>` format). This schema reflects that taxonomy.
+> **Note:** The `action` field uses the namespaced taxonomy defined normatively in [§15.3](../05-reference/15-audit-observability.md#153-event-taxonomy) (`<operation>:<outcome>` format). This schema reflects that taxonomy.
 
 ```json
 {
@@ -540,7 +540,7 @@ stripe-live=tok_c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0a1b2
 
 ### Delegation Token Schema
 
-> **Note:** The signature field stores the HMAC-SHA256 output as defined in [§14.5.1](../part-5-reference/14-cryptographic-requirements.md#1451-canonical-signed-payload) — lowercase hexadecimal encoding of the digest over the canonical payload.
+> **Note:** The signature field stores the HMAC-SHA256 output as defined in [§14.5.1](../05-reference/14-cryptographic-requirements.md#1451-canonical-signed-payload) — lowercase hexadecimal encoding of the digest over the canonical payload.
 
 ```json
 {
@@ -793,7 +793,7 @@ stripe-live=tok_c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0a1b2
 
 ### Verification Code Format
 
-When verification codes are implemented (see [§4.4](../part-1-foundations/04-core-concepts.md#44-approval-terms), DLG-5), the reference format is:
+When verification codes are implemented (see [§4.4](../01-foundations/04-core-concepts.md#44-approval-terms), DLG-5), the reference format is:
 
 - **Structure:** Two uppercase alphanumeric segments separated by a hyphen (e.g., `XKCD-7291`)
 - **First segment:** 4 uppercase alphabetic characters from a cryptographically secure random source (26^4 = ~456K values)
@@ -801,7 +801,7 @@ When verification codes are implemented (see [§4.4](../part-1-foundations/04-co
 - **Combined entropy:** ~32 bits — sufficient for session-scoped anti-spoofing (codes are short-lived and single-use within a session)
 - **Display:** Code MUST appear in both the Guardian dialog and the tool's standard output simultaneously
 
-Implementations MAY use alternative formats provided they satisfy the entropy requirement in [§4.4](../part-1-foundations/04-core-concepts.md#44-approval-terms) (at least 16 bits of CSPRNG entropy, unique within session scope).
+Implementations MAY use alternative formats provided they satisfy the entropy requirement in [§4.4](../01-foundations/04-core-concepts.md#44-approval-terms) (at least 16 bits of CSPRNG entropy, unique within session scope).
 
 ---
 
@@ -1254,7 +1254,7 @@ Future revisions of this standard may provide detailed normative guidance for HA
 
 ## A.5 Approval Dialog Reference
 
-Conformant approval dialogs MUST display the following elements (see [§10.4](../part-3-architecture/10-approval-policies.md#104-approval-channel-requirements) for normative requirements):
+Conformant approval dialogs MUST display the following elements (see [§10.4](../03-architecture/10-approval-policies.md#104-approval-channel-requirements) for normative requirements):
 
 ```
 +--------------------------------------------------+
@@ -1304,6 +1304,38 @@ Project directory:
   aws-production=tok_...
   github-api=tok_...
 ```
+
+---
+
+## A.7 Extension: Directory-Bound Tokens
+
+This section describes an optional extension for restricting token validity to a specific filesystem directory. This is useful in environments where multiple projects share a machine and each project should only access its own secret profiles.
+
+### Mechanism
+
+When a token is created, the human principal MAY specify a `bound_dir` attribute containing an absolute filesystem path. If set, the Guardian enforces directory binding during token verification:
+
+1. On each request, the Guardian resolves the requesting process's working directory (or the directory from which the tool was launched)
+2. The resolved directory MUST be equal to or a descendant of `bound_dir`
+3. If the directory check fails, the request MUST be denied with an error indistinguishable from an invalid token (see [TOKEN-15](../03-architecture/09-access-control.md))
+
+### Token Structure Extension
+
+```json
+{
+  "token_id": "a1b2c3d4e5f6...",
+  "profile_name": "aws-production",
+  "name": "dev-assistant",
+  "created_at": "2026-02-17T10:30:00Z",
+  "bound_dir": "/home/user/projects/my-app"
+}
+```
+
+### Considerations
+
+- **Symlink resolution:** Implementations SHOULD resolve symlinks before comparison to prevent bypass via symbolic links.
+- **Container environments:** In containerized deployments, `bound_dir` refers to the path inside the container. Implementations SHOULD document how bind mounts interact with directory binding.
+- **No normative weight:** This extension is informative. Implementations that do not support directory binding are fully conformant. Implementations that do support it SHOULD follow the mechanism described here for consistency.
 
 ---
 

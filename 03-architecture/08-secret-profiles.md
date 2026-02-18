@@ -1,6 +1,6 @@
 # 8. Secret Profiles and Classification
 
-A secret profile is the atomic unit of management. Each profile represents a logical grouping of related secrets--typically all the values needed to authenticate with a specific service or perform a specific class of operations.
+A secret profile is the atomic unit of management. Each profile represents a logical grouping of related secrets, typically all the values needed to authenticate with a specific service or perform a specific class of operations.
 
 ## 8.1 Profile Structure
 
@@ -10,8 +10,8 @@ A secret profile is the atomic unit of management. Each profile represents a log
 |----|-------|-------------|
 | PROFILE-1 | MUST | Profile MUST have a `name` attribute that uniquely identifies the profile within the secret store |
 | PROFILE-2 | MUST | Profile MUST have an `entries` attribute containing zero or more secret entries |
-| PROFILE-3 | MUST | Profile MUST have an `approval_policy` attribute governing read access (see [§4.4](../part-1-foundations/04-core-concepts.md#44-approval-terms) and [§10](10-approval-policies.md)) |
-| PROFILE-4 | MUST | Profile MUST have a `write_policy` attribute governing write access (see [§4.5](../part-1-foundations/04-core-concepts.md#45-lifecycle-terms) and [§10](10-approval-policies.md)) |
+| PROFILE-3 | MUST | Profile MUST have an `approval_policy` attribute governing read access (see [§4.4](../01-foundations/04-core-concepts.md#44-approval-terms) and [§10](10-approval-policies.md)) |
+| PROFILE-4 | MUST | Profile MUST have a `write_policy` attribute governing write access (see [§4.5](../01-foundations/04-core-concepts.md#45-lifecycle-terms) and [§10](10-approval-policies.md)) |
 | PROFILE-5 | MUST | Profile MUST have `created_at` and `updated_at` timestamps in UTC ISO 8601 format |
 | PROFILE-6 | MAY | Profile MAY have a `description` attribute for human-readable documentation |
 | PROFILE-7 | MAY | Profile MAY have a `tags` attribute containing organizational labels for filtering |
@@ -25,14 +25,14 @@ Each entry within a profile represents a single secret or configuration value.
 | ID | Level | Requirement |
 |----|-------|-------------|
 | ENTRY-1 | MUST | Entry MUST have a `key` attribute that uniquely identifies the entry within its parent profile |
-| ENTRY-2 | MUST | Entry MUST have a `value` attribute containing the secret value (encrypted at rest; see [Cryptographic Requirements](../part-5-reference/14-cryptographic-requirements.md)) |
+| ENTRY-2 | MUST | Entry MUST have a `value` attribute containing the secret value (encrypted at rest; see [Cryptographic Requirements](../05-reference/14-cryptographic-requirements.md)) |
 | ENTRY-3 | MUST | Entry MUST have a `sensitive` boolean attribute indicating display/logging behavior |
 | ENTRY-4 | MAY | Entry MAY have a `description` attribute for human-readable documentation |
 | ENTRY-5 | MAY | Entry MAY have a `field_type` attribute providing a UI rendering hint |
 
 ### Field Types
 
-Field types are an open extension point. The following values are recommended for interoperability; additional values are provided in [Annex A](../annexes/annex-a-protocol-details.md):
+Field types are an open extension point. The following values are recommended for interoperability; additional values are provided in [Annex A](../07-annexes/annex-a-protocol-details.md):
 
 | Type | Use Case | UI Behavior |
 |------|----------|-------------|
@@ -45,7 +45,7 @@ Field types are an open extension point. The following values are recommended fo
 
 ## 8.3 Sensitivity Classification
 
-Sensitivity classification determines how entries are displayed and logged--not how they're stored. This section restates the sensitivity behavior defined in [§5.3 Principle of Declared Sensitivity](../part-2-principles/05-design-principles.md#53-principle-of-declared-sensitivity).
+Sensitivity classification determines how entries are displayed and logged, not how they're stored. This section restates the sensitivity behavior defined in [§5.3 Principle of Declared Sensitivity](../02-principles/05-design-principles.md#53-principle-of-declared-sensitivity).
 
 ### Behavior Matrix
 
@@ -62,11 +62,11 @@ Sensitivity classification determines how entries are displayed and logged--not 
 
 > **All entries MUST be encrypted at rest regardless of sensitivity classification.**
 >
-> Sensitivity affects *display and logging behavior*, not storage security. An implementation that stores non-sensitive entries in plaintext is non-conformant. See [Cryptographic Requirements](../part-5-reference/14-cryptographic-requirements.md) for algorithm and key management requirements.
+> Sensitivity affects *display and logging behavior*, not storage security. An implementation that stores non-sensitive entries in plaintext is non-conformant. See [Cryptographic Requirements](../05-reference/14-cryptographic-requirements.md) for algorithm and key management requirements.
 
 ### Classification Guidance
 
-The following guidance illustrates common classification patterns. The human principal makes the final classification decision for each entry (see [§5.3](../part-2-principles/05-design-principles.md#53-principle-of-declared-sensitivity)).
+The following guidance illustrates common classification patterns. The human principal makes the final classification decision for each entry (see [§5.3](../02-principles/05-design-principles.md#53-principle-of-declared-sensitivity)).
 
 | Typically Sensitive | Typically Non-Sensitive |
 |--------------------|-------------------------|
@@ -80,7 +80,7 @@ Context matters: an endpoint URL that reveals internal infrastructure topology m
 
 ## 8.4 Profile Name Resolution
 
-Tools MUST resolve the target profile name before issuing a request to the Guardian. The profile name is the *identity* of the secret set a tool needs--it is not itself a secret and MUST NOT contain secret values.
+Tools MUST resolve the target profile name before issuing a request to the Guardian. The profile name is the *identity* of the secret set a tool needs; it is not itself a secret and MUST NOT contain secret values.
 
 ### Resolution Order
 
@@ -123,7 +123,7 @@ Resolution Priority 3 (tool default):
 
 ### Profile Granularity
 
-Apply the principle of least privilege when designing profiles. A profile should grant only the capabilities a tool actually needs--not merely group credentials by service or environment.
+Apply the principle of least privilege when designing profiles. A profile should grant only the capabilities a tool actually needs, not merely group credentials by service or environment.
 
 **Scope by capability, not just by environment:**
 
@@ -147,9 +147,9 @@ AVOID:
 
 **Why capability-scoped profiles:**
 
-- Compromise of one profile doesn't expose others (see [§3.3 Boundary 2](../part-1-foundations/03-threat-model.md#32-threat-scenarios), TS-4 and TS-5)
-- Different tools need different capability levels--read-only monitoring tools shouldn't hold write credentials
-- Different risk levels warrant different approval policies--deploy profiles may require Tier 0, read-only profiles may operate at Tier 2
+- Compromise of one profile doesn't expose others (see [§3.3 Boundary 2](../01-foundations/03-threat-model.md#32-threat-scenarios), TS-4 and TS-5)
+- Different tools need different capability levels; read-only monitoring tools shouldn't hold write credentials
+- Different risk levels warrant different approval policies; deploy profiles may require Tier 0, read-only profiles may operate at Tier 2
 - Blast radius is limited when credentials are scoped to minimum necessary capability
 - Easier to audit which operations were possible with compromised credentials
 

@@ -38,10 +38,10 @@ The agent reasoning loop and the Guardian service MUST execute in separate OS pr
 |----|-------|-------------|
 | PROC-1 | MUST | Agent and Guardian execute in separate OS processes |
 | PROC-2 | MUST | Agent process MUST NOT have read access to secret storage files |
-| PROC-3 | MUST | Guardian socket/endpoint MUST enforce token-based authentication |
+| PROC-3 | MUST | Guardian socket/endpoint MUST enforce token-based authentication on every request, per the token structure ([§9.2](../03-architecture/09-access-control.md#92-token-structure)) and token verification algorithm ([§9.3](../03-architecture/09-access-control.md#93-token-verification)). Specifically: (a) every request MUST include a bearer token in the request header (TOKEN-1); (b) the Guardian MUST verify the HMAC-SHA256 signature of every token on receipt, using the profile-specific signing key (TOKEN-11); (c) the Guardian MUST verify the token has not expired and has not been revoked before granting access (TOKEN-12, TOKEN-13). Transport-layer authentication (mTLS) is a supplementary control (TLS-2) and does not substitute for per-request token verification |
 | PROC-4 | SHOULD | Tool processes SHOULD be short-lived or sandboxed |
 | PROC-5 | MUST | Master encryption key MUST reside only in Guardian process memory |
-| PROC-6 | MUST | Guardian process MUST run with only the OS privileges required for its operation (socket binding, keychain access, file I/O to secret storage). At Level 2 and above, the Guardian MUST NOT run as root or with equivalent privileges unless required by the platform for specific operations (e.g., keychain access on some distributions) |
+| PROC-6 | MUST | Guardian process MUST run with only the OS privileges required for its operation (socket binding, keychain access, file I/O to secret storage). At Level 2 and above, the Guardian **MUST NOT** run as root or with any privilege that grants it memory inspection, process control, or filesystem override authority over other processes. **"Equivalent to root"** is platform-specific and means: on Linux — UID 0 or any process holding dangerous capabilities including CAP_SYS_PTRACE, CAP_DAC_OVERRIDE, CAP_NET_ADMIN, CAP_SYS_ADMIN, or equivalent; on macOS — UID 0, or membership in `wheel` group with sudo access to these capabilities; on Windows — running as SYSTEM, as a member of the Administrators group, or holding SeDebugPrivilege or SeTcbPrivilege. Exception: specific capabilities required for platform keychain access (e.g., `CAP_IPC_LOCK` on some Linux distributions for memory pinning) are permitted when documented in the conformance statement; the Guardian MUST request only the minimum capability set required and MUST document each capability in the conformance statement |
 | PROC-7 | MUST | IPC channel permissions MUST restrict access to the owning user |
 
 ### Failure Modes
@@ -54,7 +54,7 @@ The agent reasoning loop and the Guardian service MUST execute in separate OS pr
 ### What This Prevents
 
 - **TS-1:** Agent cannot extract secrets from tool output via memory inspection
-- **TS-2:** Process isolation is a necessary (but not sufficient) control -- the agent cannot directly access tool or Guardian memory to orchestrate exfiltration. Full TS-2 mitigation also requires scoped access (Boundary 2) and approval attestation (Boundary 3)
+- **TS-2:** Process isolation is a necessary (but not sufficient) control; the agent cannot directly access tool or Guardian memory to orchestrate exfiltration. Full TS-2 mitigation also requires scoped access (Boundary 2) and approval attestation (Boundary 3)
 - **TS-6:** Tool cannot extract encryption keys from Guardian's process memory
 - **TS-15:** Combined with token storage isolation, process separation limits the agent's ability to create tools that impersonate legitimate ones by preventing the agent from accessing Guardian-managed token storage directly
 
@@ -99,29 +99,30 @@ The approval mechanism must use a channel that the agent cannot intercept or for
 
 ### Approval Channel Requirements
 
-> **Terminology:** In the following requirements, "dialog" refers to the approval presentation regardless of channel mechanism -- native OS window, messaging service notification (Slack, Teams), web dashboard, webhook callback interface, or any other conformant channel. Requirements apply equally to all channel types.
+> **Terminology:** In the following requirements, "dialog" refers to the approval presentation regardless of channel mechanism: native OS window, messaging service notification (Slack, Teams), web dashboard, webhook callback interface, or any other conformant channel. Requirements apply equally to all channel types.
 
 | ID | Level | Requirement |
 |----|-------|-------------|
-| DLG-1 | MUST | The approval channel MUST be independent of the agent process -- the agent MUST NOT be able to intercept, forge, inject input into, or dismiss the approval interaction. At Level 2 and above, conformant channels include native OS dialogs, authenticated out-of-band services (e.g., Slack, Teams, PagerDuty with authenticated callbacks), MFA-gated web dashboards, and webhook-based approval ([§10.6](../part-3-architecture/10-approval-policies.md#106-webhook-based-approval)). At Level 1, terminal-based approval is permitted provided the agent process has no access to the approval terminal's input stream (see [Conformance §13.2](../part-4-conformance/13-conformance.md#132-level-1-basic)). The specific channel mechanism is implementation-defined; conformance is determined by the channel independence property, not the mechanism |
+| DLG-1 | MUST | The approval channel MUST be independent of the agent process; the agent MUST NOT be able to intercept, forge, inject input into, or dismiss the approval interaction. At Level 2 and above, conformant channels include native OS dialogs, authenticated out-of-band services (e.g., Slack, Teams, PagerDuty with authenticated callbacks), MFA-gated web dashboards, and webhook-based approval ([§10.6](../03-architecture/10-approval-policies.md#106-webhook-based-approval)). At Level 1, terminal-based approval is permitted provided the agent process has no access to the approval terminal's input stream (see [Conformance §13.2](../04-conformance/13-conformance.md#132-level-1-basic)). The specific channel mechanism is implementation-defined; conformance is determined by the channel independence property, not the mechanism |
 | DLG-2 | MUST | Dialog MUST display the profile name |
 | DLG-3 | MUST | Dialog MUST display the token name and partial token ID |
-| DLG-4 | MUST | Dialog MUST display the complete list of entry keys being requested without truncation. If the list is long, the dialog MUST use scrolling or pagination, not ellipsis (see [§3.5.2](../part-1-foundations/03-threat-model.md#352-approval-social-engineering-ts-16), TS-16) |
+| DLG-4 | MUST | Dialog MUST display the complete list of entry keys being requested without truncation. If the list is long, the dialog MUST use scrolling or pagination, not ellipsis (see [§3.5.2](../01-foundations/03-threat-model.md#352-approval-social-engineering-ts-16), TS-16) |
 | DLG-5 | SHOULD | Dialog SHOULD display a verification code to provide anti-spoofing assurance. Verification codes are MUST at Level 3. Deployments that satisfy the anti-spoofing property through alternative mechanisms (MFA-gated approval, authenticated out-of-band channels, biometric-locked sessions) MAY omit verification codes at Level 2 |
-| DLG-6 | SHOULD | When verification codes are displayed, the user MUST be able to verify the code by cross-referencing it against the code displayed in the requesting tool's output |
+| DLG-6 | MUST | When verification codes are displayed, the user **MUST** be able to verify the code by cross-referencing it against the code displayed in the requesting tool's output. The code **MUST** be available in the tool's output before the approval dialog is presented, so the user can verify both before approving |
+| DLG-6a | MUST | When the deployment environment allows the agent process to capture tool stdout (the common case in agentic frameworks), verification codes **MUST** be delivered through a channel **the agent process cannot access**. The conformance test is the agent's *capability* to read the channel, not whether the agent currently monitors it — "does not routinely observe" is not sufficient; a channel the agent can access on demand is not a conformant delivery channel. Acceptable channels include: tool stderr (when the agent only captures stdout and has no mechanism to access stderr), a Guardian-provided side-channel outside the agent's OS-level access (e.g., a named pipe or socket accessible only to the tool process by OS permissions), or an out-of-band delivery mechanism that is independent of the agent runtime (SMS, email, authenticator app, hardware token display). Delivery via a stream the agent can access — even if not currently monitored — is **NOT** conformant when an agent-independent channel is available. If no alternative channel is technically feasible, the implementation **MUST** document this limitation in the conformance statement with a description of why agent-independent delivery is not achievable in the deployment environment |
 | DLG-7 | MUST | Dialog MUST NOT be dismissable by the agent process |
 | DLG-8 | MUST | Dialog default action MUST be "Deny" (no auto-approve on timeout) |
 | DLG-9 | SHOULD | Dialog SHOULD have a configurable timeout (default: 60 seconds) |
 | DLG-10 | MUST | If the approval channel cannot present the approval interaction to the human principal, access MUST be denied |
-| DLG-11 | MUST | Dialog content MUST be generated entirely by the Guardian from its own authoritative records. No text originating from the agent or agent conversation is permitted (see [§3.5.2](../part-1-foundations/03-threat-model.md#352-approval-social-engineering-ts-16), TS-16) |
+| DLG-11 | MUST | Dialog content MUST be generated entirely by the Guardian from its own authoritative records. No text originating from the agent or agent conversation is permitted (see [§3.5.2](../01-foundations/03-threat-model.md#352-approval-social-engineering-ts-16), TS-16) |
 | DLG-12 | MUST | Each entry MUST display its sensitivity classification. Entries marked `sensitive=true` MUST be visually distinguished (e.g., icon, color, label) |
 | DLG-13 | SHOULD | Dialog SHOULD display a risk-level summary based on profile approval policy and the sensitivity of requested entries |
-| DLG-14 | MUST | When a request includes entries not covered by an active `prompt_once` session, the dialog MUST show only the entries requiring new approval. Entries already in the session's approved set MUST NOT be re-prompted. The dialog SHOULD indicate that additional entries from the same profile were previously approved in the current session (see [§10.3 SESS-7](../part-3-architecture/10-approval-policies.md#103-session-approval-cache)) |
-| DLG-15 | MUST | Approval-path integrity MUST hold regardless of UI placement. A deployment is non-conformant if all three are simultaneously true on the same machine: (1) the user reads agent output, (2) the user approves a consequential decision, and (3) the agent runtime that produced the output executes there. In-line approval UX is permitted only when the agent cannot tamper with rendered approval content or transmitted decisions |
+| DLG-14 | MUST | When a request includes entries not covered by an active `prompt_once` session, the dialog MUST show only the entries requiring new approval. Entries already in the session's approved set MUST NOT be re-prompted. The dialog SHOULD indicate that additional entries from the same profile were previously approved in the current session (see [§10.3 SESS-7](../03-architecture/10-approval-policies.md#103-session-approval-cache)) |
+| DLG-15 | MUST | **Approval-path integrity:** The agent process **MUST NOT** have any OS-level capability to read from, write to, inject content into, suppress, or dismiss the approval interaction, regardless of whether the agent and the approval UI execute on the same machine. The conformance test is the agent's *capability* to tamper with the approval channel, not the deployment topology. A single-machine deployment **IS** conformant when the Guardian spawns the approval interaction through a mechanism the agent process cannot access: for example, a native OS window owned by the Guardian process under a separate OS window handle, a terminal session isolated by OS user credentials, or an out-of-band channel on a device the agent cannot reach. A deployment **IS NOT** conformant if the agent process holds any IPC handle, shared file descriptor, or OS primitive by which it could read the verification code, inject approval input, or suppress display of the approval interaction. Implementations **MUST** document in their conformance statement the specific mechanism that prevents agent process access to the approval channel |
 
 ### Verification Code Design
 
-Verification codes are one mechanism for satisfying the anti-spoofing property of Boundary 3 (see [§4.4, Approval Integrity](../part-1-foundations/04-core-concepts.md#44-approval-terms)). They are most valuable in desktop environments where other anti-spoofing controls (MFA, authenticated out-of-band channels) are not available. In environments where the approval channel is already authenticated through stronger mechanisms, verification codes add friction without adding security.
+Verification codes are one mechanism for satisfying the anti-spoofing property of Boundary 3 (see [§4.4, Approval Integrity](../01-foundations/04-core-concepts.md#44-approval-terms)). They are most valuable in desktop environments where other anti-spoofing controls (MFA, authenticated out-of-band channels) are not available. In environments where the approval channel is already authenticated through stronger mechanisms, verification codes add friction without adding security.
 
 When implemented, the verification code prevents spoofing attacks where a malicious process displays a fake approval dialog:
 
@@ -160,19 +161,19 @@ Awaiting approval...
 **Properties (when implemented):**
 - Generated by the Guardian, not the requesting process
 - Displayed in both the dialog and the requesting tool's terminal
-- MUST be generated from a cryptographically secure random source and MUST be unique within the scope of a Guardian session (see [§4.4](../part-1-foundations/04-core-concepts.md#44-approval-terms))
+- MUST be generated from a cryptographically secure random source and MUST be unique within the scope of a Guardian session (see [§4.4](../01-foundations/04-core-concepts.md#44-approval-terms))
 - Valid only for the duration of the associated approval dialog
 
-> **Implementation note:** The verification code is one anti-spoofing mechanism. The standard mandates the *property* -- the agent cannot forge, intercept, or influence the approval verification -- not the *mechanism*. Deployments where the approval channel itself is authenticated (e.g., MFA-gated dashboards, HMAC-signed webhooks, biometric-locked desktop sessions) already satisfy this property. In such deployments, verification codes are redundant overhead. The standard recommends verification codes for desktop environments lacking these controls, and requires them at Level 3 as defense-in-depth.
+> **Implementation note:** The verification code is one anti-spoofing mechanism. The standard mandates the *property* (the agent cannot forge, intercept, or influence the approval verification), not the *mechanism*. Deployments where the approval channel itself is authenticated (e.g., MFA-gated dashboards, HMAC-signed webhooks, biometric-locked desktop sessions) already satisfy this property. In such deployments, verification codes are redundant overhead. The standard recommends verification codes for desktop environments lacking these controls, and requires them at Level 3 as defense-in-depth.
 
 > **Relay attack consideration:** If verification codes are implemented, be aware that the agent typically captures the tool's terminal output and could learn the verification code. The anti-spoofing property then depends on the agent being unable to spawn native OS dialogs. On platforms where this cannot be enforced, implementations SHOULD display the verification code through a channel the agent does not observe (e.g., direct stderr if the agent only captures stdout, or a Guardian-provided side-channel).
 
 ### What This Prevents
 
-- **TS-3:** Prompt injection cannot bypass approval (agent cannot interact with the approval channel -- DLG-1)
+- **TS-3:** Prompt injection cannot bypass approval (agent cannot interact with the approval channel; see DLG-1)
 - **TS-9:** Attacker cannot display a convincing fake dialog (verification code won't match when implemented)
 - **TS-16:** Dialog content is Guardian-authoritative, preventing agent-influenced social engineering (DLG-11, DLG-4, DLG-12)
-- **TS-17:** Rate limiting and escalating scrutiny controls resist approval fatigue exploitation (see [§3.5.3](../part-1-foundations/03-threat-model.md#353-approval-fatigue-exploitation-ts-17))
+- **TS-17:** Rate limiting and escalating scrutiny controls resist approval fatigue exploitation (see [§3.5.3](../01-foundations/03-threat-model.md#353-approval-fatigue-exploitation-ts-17))
 
 ---
 
@@ -209,9 +210,9 @@ REQUIRED for multi-machine and production remote deployments.
 | ID | Level | Requirement |
 |----|-------|-------------|
 | TLS-1 | MUST | TLS 1.3 or later |
-| TLS-2 | SHOULD | Mutual TLS (mTLS) for caller authentication |
+| TLS-2 | MUST/SHOULD | Mutual TLS (mTLS) for caller authentication. **At Level 3, mTLS is MUST** for all Guardian communication over TCP/TLS transports (see CONF-L3-8). **At Level 1 and Level 2, mTLS is SHOULD** — strongly recommended but not required as a hard conformance gate. Deployments at Level 1 or Level 2 that do not implement mTLS MUST document the decision in their conformance statement and MUST ensure that token-based authentication (PROC-3, §9.3) provides the primary caller authentication mechanism |
 | TLS-3 | MUST | Token-based authentication in addition to transport |
-| TLS-4 | MUST | Server certificates MUST be validated (no implicit self-signed trust) |
+| TLS-4 | MUST | Server certificates MUST be validated. Certificates MUST be validated against a trusted certificate authority (CA). Self-signed certificates MUST NOT be trusted implicitly. Exception: private deployments operating within a dedicated internal PKI (e.g., an organization-managed internal CA, HashiCorp Vault PKI, or equivalent) MAY use certificates signed by that internal CA, provided: (a) the internal CA's root certificate is explicitly configured as a trusted anchor in the Guardian and all clients; (b) the CA is operated exclusively by the deploying organization; and (c) the CA configuration is documented in the conformance statement. Ad-hoc or auto-generated self-signed certificates with no PKI chain are **NOT** conformant. |
 | TLS-5 | SHOULD | CA certificate path configurable |
 
 ---
@@ -229,7 +230,7 @@ Implementations MUST maintain strict separation between client-side code (used b
 | PKG-5 | SHOULD | Client library SHOULD be vendorable as a single file |
 | PKG-6 | SHOULD | Client SHOULD auto-start Guardian only for local transports |
 
-### Why This Matters
+### Rationale
 
 The primary threat is an agent (or compromised tool) using server-side code to bypass the Guardian's authentication, approval, and audit controls. If a tool has access to the vault engine and master key derivation code, it could decrypt secrets directly.
 

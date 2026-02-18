@@ -21,3 +21,11 @@ SAGA-Standard-v1.0.md
 # Python
 __pycache__/
 *.py[cod]
+
+# AI Stuff
+.claude/
+.cursor/
+.codex/
+.roo/
+.opencode/
+/reviews

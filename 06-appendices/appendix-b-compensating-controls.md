@@ -1,6 +1,6 @@
 # Appendix B: Compensating Controls (Informative)
 
-> **Note:** This appendix is informative. It does not contain normative requirements. It provides a framework for compensating controls--additional safeguards that reduce risk when the primary control cannot be fully implemented. Not every environment can implement the standard perfectly; legacy systems, organizational constraints, or technical limitations may prevent full architectural isolation.
+> **Note:** This appendix is informative. It does not contain normative requirements. It provides a framework for compensating controls, additional safeguards that reduce risk when the primary control cannot be fully implemented. Not every environment can implement the standard perfectly; legacy systems, organizational constraints, or technical limitations may prevent full architectural isolation.
 
 ## What Compensating Controls Are
 
@@ -286,10 +286,10 @@ A shared service needs to use user credentials, but cannot implement the full de
 
 Sometimes compensating controls are insufficient. You may need to accept risk when:
 
-1. **The risk is bounded** -- Exposure is limited to low-value credentials
-2. **Detection is reliable** -- You can detect compromise quickly
-3. **Recovery is fast** -- You can rotate credentials and recover in minutes
-4. **The alternative is worse** -- Not having the agent at all would cause greater harm
+1. **The risk is bounded** - Exposure is limited to low-value credentials
+2. **Detection is reliable** - You can detect compromise quickly
+3. **Recovery is fast** - You can rotate credentials and recover in minutes
+4. **The alternative is worse** - Not having the agent at all would cause greater harm
 
 Document accepted risks explicitly:
 - What risk is accepted

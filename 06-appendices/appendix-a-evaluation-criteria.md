@@ -5,10 +5,10 @@
 ## How to Use This Guide
 
 Each criterion has:
-- **The question to ask** -- What you're trying to determine
-- **What good looks like** -- Indicators of proper implementation
-- **Red flags** -- Warning signs that warrant deeper investigation
-- **Why it matters** -- The risk if this control is missing
+- **The question to ask** - What you're trying to determine
+- **What good looks like** - Indicators of proper implementation
+- **Red flags** - Warning signs that warrant deeper investigation
+- **Why it matters** - The risk if this control is missing
 
 ## A.1 Process Isolation
 
@@ -119,7 +119,7 @@ Each criterion has:
 - Native OS dialogs, not terminal prompts (Level 2+)
 - Verification codes that match between dialog and tool output
 - Default action is "Deny"
-- Dialog content generated entirely by Guardian -- no agent-originated text (DLG-11)
+- Dialog content generated entirely by Guardian, no agent-originated text (DLG-11)
 - Complete list of entry keys displayed without truncation (DLG-4)
 - Sensitivity classification visible for each entry (DLG-12)
 
@@ -189,16 +189,18 @@ Each criterion has:
 ### Q11: Are secret values in the audit log?
 
 **What to look for:**
-- Values NEVER in logs
-- Keys logged, values not
-- Even non-sensitive entries excluded from log values
+- `sensitive=true` entry values are NEVER present in any log output (AUDIT-5: hard requirement)
+- Entry keys logged; values of sensitive entries suppressed
+- For `sensitive=false` entries: value inclusion in logs is permitted at the operator's discretion (AUDIT-5) and documented in the conformance statement; NOT including them is a stronger posture but NOT required
+- Logs stored in a location inaccessible to the agent process
 
 **Red flags:**
-- "We log everything for debugging"
-- Non-sensitive entries logged with values
-- Logs stored in agent-accessible location
+- "We log everything for debugging" (no distinction between sensitive and non-sensitive classification)
+- `sensitive=true` entry values visible in any log output, including debug logs
+- Log inclusion policy undocumented or non-configurable
+- Logs stored in agent-accessible storage
 
-**Why it matters:** Logs are often less protected than secrets. A log leak shouldn't become a secret leak.
+**Why it matters:** Logs are often less protected than primary secret storage. A log leak MUST NOT become a sensitive-secret leak; whether it leaks non-sensitive entry values is an operator policy decision that should be deliberate, not accidental.
 
 ---
 
@@ -333,7 +335,7 @@ Each criterion has:
 
 **Red flags:**
 - Tokens stored in environment variables accessible to the agent
-- No tool registration -- any process with a valid token can request secrets
+- No tool registration; any process with a valid token can request secrets
 - Agent framework passes tokens to tools through its own invocation chain
 - Agent has filesystem access to token storage paths
 

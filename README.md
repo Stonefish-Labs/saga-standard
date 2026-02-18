@@ -4,21 +4,23 @@
 
 This is a standard for managing secrets in systems where autonomous AI agents invoke tools and services on your behalf. It defines how to keep secrets away from agent reasoning while still allowing agents to get work done that requires authentication.
 
-**The problem:** Your AI agent needs to access your AWS account, your GitHub repos, your Slack workspace. But you don't want the agent's reasoning model to ever see your API keys, tokens, or passwords. And you want to stay in control--knowing what's accessed, approving when needed, and able to revoke at any time.
+**The problem:** Your AI agent needs to access your AWS account, your GitHub repos, your Slack workspace. But you don't want the agent's reasoning model to ever see your API keys, tokens, or passwords. And you want to stay in control: knowing what's accessed, approving when needed, and able to revoke at any time.
 
-**The solution:** A mediated architecture where a trusted service (the Guardian) holds secrets and provides them only to authorized tools--never to the agent itself.
+**The solution:** A mediated architecture where a trusted service (the Guardian) holds secrets and provides them only to authorized tools, never to the agent itself.
 
 ## Who This Is For
 
-**Security architects** evaluating whether an agentic system can be trusted with secrets. Start with the [Appendices](appendices/)--they tell you what to look for, what to avoid, and how to assess risk.
+**Security architects** evaluating whether an agentic system can be trusted with secrets. Start with the [Appendices](06-appendices/): they tell you what to look for, what to avoid, and how to assess risk.
 
-**Platform engineers** building agentic systems that need to handle secrets. Read [Part 1: Foundations](part-1-foundations/) to understand the threat model, then [Part 3: Architecture](part-3-architecture/) for the design patterns.
+**Platform engineers** building agentic systems that need to handle secrets. Read [Part 1: Foundations](01-foundations/) to understand the threat model, then [Part 3: Architecture](03-architecture/) for the design patterns.
 
-**Standard authors and auditors** assessing conformance. [Part 2: Principles](part-2-principles/) defines the non-negotiables. [Part 5: Reference](part-5-reference/) has the cryptographic and audit requirements.
+**Standard authors and auditors** assessing conformance. [Part 2: Principles](02-principles/) defines the non-negotiables. [Part 5: Reference](05-reference/) has the cryptographic and audit requirements.
 
-**Implementers** building protocol-level code. Start here for architecture, then see [Annex A](annexes/annex-a-protocol-details.md) for wire protocol, schemas, and example flows.
+**Implementers** building protocol-level code. Start here for architecture, then see [Annex A](07-annexes/annex-a-protocol-details.md) for wire protocol, schemas, and example flows.
 
 ## How to Read This Standard
+
+Prefer a single document? Read the [full specification](SAGA-Standard-20260217.md).
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -60,9 +62,9 @@ The standard solves this with a **Guardian service** that sits between tools and
 
 ## The Six Principles
 
-1. **The agent never holds secrets** - Not through prompt engineering, not through careful instructions--through architecture.
+1. **The agent never holds secrets** - Not through prompt engineering, not through careful instructions: through architecture.
 
-2. **The human always retains control** - Override authority, revocation, inspection--always available, never circumvented.
+2. **The human always retains control** - Override authority, revocation, inspection: always available, never circumvented.
 
 3. **Access is scoped, not global** - A tool authorized for one profile cannot access any other.
 
@@ -86,41 +88,45 @@ The standard solves this with a **Guardian service** that sits between tools and
 ```
 SAGA-Standard/
 ├── README.md                           (you are here)
+├── SAGA-Standard-20260217.md           (single-page rendered spec)
 ├── 00-foreword.md
 │
-├── part-1-foundations/
+├── 01-foundations/
 │   ├── 01-introduction.md              The credential problem in agentic AI
 │   ├── 02-scope.md                     What's in and out of scope
 │   ├── 03-threat-model.md              Threat actors, scenarios, boundaries
 │   └── 04-core-concepts.md             Terms and mental model
 │
-├── part-2-principles/
+├── 02-principles/
 │   ├── 05-design-principles.md         The six non-negotiable principles
 │   ├── 06-trust-boundaries.md          Three mandatory security boundaries
 │   └── 07-autonomy-tiers.md            When to use which tier
 │
-├── part-3-architecture/
+├── 03-architecture/
 │   ├── 08-secret-profiles.md           Profiles, entries, classification
 │   ├── 09-access-control.md            Token model and scoping
 │   ├── 10-approval-policies.md         Read/write approval, sessions
 │   ├── 11-secret-lifecycle.md          Write-back, OAuth, rotation
 │   └── 12-delegation.md                Inter-agent and cross-system
 │
-├── part-4-conformance/
+├── 04-conformance/
 │   └── 13-conformance.md               Conformance levels
 │
-├── part-5-reference/
+├── 05-reference/
 │   ├── 14-cryptographic-requirements.md
 │   ├── 15-audit-observability.md
 │   └── 16-relationship-to-standards.md
 │
-└── appendices/                          (Informative)
-    ├── appendix-a-evaluation-criteria.md  What to look for, red flags
-    ├── appendix-b-compensating-controls.md  When you can't do it perfectly
-    └── appendix-c-anti-patterns.md        Common failures and why
+├── 06-appendices/                       (Informative)
+│   ├── appendix-a-evaluation-criteria.md  What to look for, red flags
+│   ├── appendix-b-compensating-controls.md  When you can't do it perfectly
+│   └── appendix-c-anti-patterns.md        Common failures and why
+│
+└── 07-annexes/                          (Informative)
+    └── annex-a-protocol-details.md      Wire protocol, schemas, flows
 ```
 
-> **Note:** Wire protocol, schema definitions, example flows, and reference architecture are provided in [Annex A](annexes/annex-a-protocol-details.md) (Informative).
+> **Note:** Wire protocol, schema definitions, example flows, and reference architecture are provided in [Annex A](07-annexes/annex-a-protocol-details.md) (Informative).
 
 ## Contributing
 
@@ -145,13 +151,12 @@ This is an open standard in early draft. Feedback, corrections, and contribution
 python build.py
 ```
 
-This generates `SAGA-Standard-v1.0.md` with all sections concatenated and a table of contents.
+This generates `SAGA-Standard-20260217.md` with all sections concatenated and a table of contents.
 
 ## Version
 
-**Version:** 1.0 Draft  
 **Identifier:** SAGA-2026-01  
-**Status:** Public Draft  
+**Status:** Working Draft  
 **Date:** 2026-02-17
 
 ## License

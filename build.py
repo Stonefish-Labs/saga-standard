@@ -12,30 +12,30 @@ from datetime import datetime
 
 
 STANDARD_DIR = Path(__file__).parent
-OUTPUT_FILE = STANDARD_DIR.parent / "SAGA-Standard-v1.0.md"
+OUTPUT_FILE = STANDARD_DIR / "SAGA-Standard-20260217.md"
 
 SECTION_ORDER = [
     "README.md",
     "00-foreword.md",
-    "part-1-foundations/01-introduction.md",
-    "part-1-foundations/02-scope.md",
-    "part-1-foundations/03-threat-model.md",
-    "part-1-foundations/04-core-concepts.md",
-    "part-2-principles/05-design-principles.md",
-    "part-2-principles/06-trust-boundaries.md",
-    "part-2-principles/07-autonomy-tiers.md",
-    "part-3-architecture/08-secret-profiles.md",
-    "part-3-architecture/09-access-control.md",
-    "part-3-architecture/10-approval-policies.md",
-    "part-3-architecture/11-secret-lifecycle.md",
-    "part-3-architecture/12-delegation.md",
-    "part-4-conformance/13-conformance.md",
-    "part-5-reference/14-cryptographic-requirements.md",
-    "part-5-reference/15-audit-observability.md",
-    "part-5-reference/16-relationship-to-standards.md",
-    "appendices/appendix-a-evaluation-criteria.md",
-    "appendices/appendix-b-compensating-controls.md",
-    "appendices/appendix-c-anti-patterns.md",
+    "01-foundations/01-introduction.md",
+    "01-foundations/02-scope.md",
+    "01-foundations/03-threat-model.md",
+    "01-foundations/04-core-concepts.md",
+    "02-principles/05-design-principles.md",
+    "02-principles/06-trust-boundaries.md",
+    "02-principles/07-autonomy-tiers.md",
+    "03-architecture/08-secret-profiles.md",
+    "03-architecture/09-access-control.md",
+    "03-architecture/10-approval-policies.md",
+    "03-architecture/11-secret-lifecycle.md",
+    "03-architecture/12-delegation.md",
+    "04-conformance/13-conformance.md",
+    "05-reference/14-cryptographic-requirements.md",
+    "05-reference/15-audit-observability.md",
+    "05-reference/16-relationship-to-standards.md",
+    "06-appendices/appendix-a-evaluation-criteria.md",
+    "06-appendices/appendix-b-compensating-controls.md",
+    "06-appendices/appendix-c-anti-patterns.md",
 ]
 
 
@@ -125,7 +125,7 @@ def adjust_header_levels(content: str, is_readme: bool = False) -> str:
 
 def build_standard():
     """Build the complete standard document."""
-    print("Building the Standard v1.0...")
+    print("Building SAGA Standard...")
 
     all_headers = []
     all_content = []
@@ -148,12 +148,11 @@ def build_standard():
 
     header = f"""# SAGA: Secret Access Governance for Agents
 
-## Version 1.0 — Public Draft
+## Working Draft — {datetime.now().strftime("%Y-%m-%d")}
 
 **Standard Identifier:** SAGA-2026-01
-**Status:** Public Draft
+**Status:** Working Draft
 **Date:** {datetime.now().strftime("%Y-%m-%d")}
-**Working Group:** Open
 
 ---
 

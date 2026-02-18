@@ -6,7 +6,7 @@ This standard applies to any system where:
 
 - An AI model (LLM, reasoning engine, planning system) triggers operations that require secrets for authentication or cryptographic operations
 - A Guardian (or equivalent mediator) controls access to the encrypted secret store and enforces authorization policies on behalf of the human principal
-- The secrets are owned by -- or under the authority of -- a human principal who may not be present at the time of use. This includes secrets provisioned by automated systems (e.g., cloud-to-cloud API keys, service account credentials) where a human principal retains accountability and override authority over their use
+- The secrets are owned by, or under the authority of, a human principal who may not be present at the time of use. This includes secrets provisioned by automated systems (e.g., cloud-to-cloud API keys, service account credentials) where a human principal retains accountability and override authority over their use
 - Multiple tools, skills, or services may require different secrets within the same agent session
 - Secrets may need to be updated (written back) during the course of agent operation
 
@@ -24,7 +24,7 @@ This standard applies to any system where:
 
 ### Secret Types Covered
 
-This standard covers the following categories of secrets -- information that, alone or in combination, grants access to a resource or enables a privileged capability (see [§1 Introduction](01-introduction.md) for the full definition):
+This standard covers the following categories of secrets: information that, alone or in combination, grants access to a resource or enables a privileged capability (see [§1 Introduction](01-introduction.md) for the full definition):
 
 | Type | Examples |
 |------|----------|
@@ -42,7 +42,7 @@ Jailbreaking defense, prompt injection prevention at the model level, and output
 
 ### Agent Identity and Authentication
 
-How the agent proves *its own* identity to external systems -- and how agentic identity is established, attested, and verified -- is an active area of standardization outside the scope of this document. This standard is deliberately agnostic to the agent identity mechanism. It addresses what happens after the agent is authenticated: how it accesses secrets to do work on the human principal's behalf.
+How the agent proves *its own* identity to external systems, and how agentic identity is established, attested, and verified, is an active area of standardization outside the scope of this document. This standard is deliberately agnostic to the agent identity mechanism. It addresses what happens after the agent is authenticated: how it accesses secrets to do work on the human principal's behalf.
 
 ### Network Transport Encryption
 
@@ -62,9 +62,11 @@ This standard does not prescribe how secrets should be generated or what strengt
 
 ## 2.3 Protocol Details (Annex A)
 
-Wire-level protocol details, JSON schema definitions, example flows, and reference architectures are provided in [Annex A](../annexes/annex-a-protocol-details.md) (Informative). This standard defines *what* a conformant system must do; Annex A illustrates *how* to implement it at the wire level. Annex A does not carry normative weight — conformance is assessed against this standard alone.
+Wire-level protocol details, JSON schema definitions, example flows, and reference architectures are provided in [Annex A](../07-annexes/annex-a-protocol-details.md). This standard defines *what* a conformant system must do; Annex A illustrates *how* to implement it at the wire level.
 
-This standard does not guarantee wire-level interoperability between independent implementations. Interoperability requires that implementations agree on a common wire protocol; Annex A provides one such protocol as a reference. Implementers may use alternative wire representations provided all normative requirements in this standard are satisfied.
+**Interoperability profile:** Implementations claiming interoperability with other conformant SAGA implementations must document their wire protocol, algorithm identifier encoding, and HKDF parameters in their conformance statement (see [§13.6](../04-conformance/13-conformance.md#136-protocol-conformance)). Implementations using the Annex A reference protocol and the normative cryptographic values from §14 may claim wire interoperability; implementations using alternative wire representations must not claim wire interoperability without demonstrated compatibility.
+
+This standard does not guarantee wire-level interoperability between implementations using different wire protocols. Interoperability within a deployment requires agreement on a common wire protocol among all participating implementations.
 
 ## 2.4 Boundary with Related Standards
 

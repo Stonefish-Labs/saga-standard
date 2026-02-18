@@ -1,12 +1,12 @@
 # Appendix C: Anti-Patterns (Informative)
 
-> **Note:** This appendix is informative. It does not contain normative requirements. It documents common mistakes in agentic secret management. Understanding these failures is as important as understanding the correct patterns--they reveal why the standard's principles exist.
+> **Note:** This appendix is informative. It does not contain normative requirements. It documents common mistakes in agentic secret management. Understanding these failures is as important as understanding the correct patterns; they reveal why the standard's principles exist.
 
 Each anti-pattern includes:
-- **The pattern** -- What people do
-- **Why it seems reasonable** -- The logic behind the mistake
-- **Why it fails** -- The specific vulnerability
-- **Real-world consequences** -- What happens when it goes wrong
+- **The pattern** - What people do
+- **Why it seems reasonable** - The logic behind the mistake
+- **Why it fails** - The specific vulnerability
+- **Real-world consequences** - What happens when it goes wrong
 
 ---
 
@@ -253,8 +253,8 @@ Tool: "Access granted."
 ### The Fix
 
 Use an agent-independent approval channel:
-- Native OS dialogs -- agent cannot read or interact with native windows
-- Trusted communication platforms (Slack, Teams, PagerDuty) -- authenticated out-of-band channel the agent cannot access
+- Native OS dialogs (agent cannot read or interact with native windows)
+- Trusted communication platforms (Slack, Teams, PagerDuty): authenticated out-of-band channel the agent cannot access
 - MFA-gated web dashboards or webhook-based approval
 - Verification codes prevent spoofing (when used)
 - Default to deny, not approve
