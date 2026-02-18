@@ -213,7 +213,7 @@ A token that authorizes one agent to access specific profiles on behalf of anoth
 
 ### Delegation Chain
 
-The sequence of authorizations from the human principal through one or more agents to a final tool. Each link in the chain must be independently auditable. Each link **MUST** attenuate, never amplify, the scope of the preceding link. Implementations **SHOULD** enforce a maximum delegation chain depth to ensure the human principal can meaningfully understand the scope of delegated access. See [TS-12, TS-13, TS-14](03-threat-model.md#32-threat-scenarios) for the threat scenarios that motivate these constraints.
+The sequence of authorizations from the human principal through one or more agents to a final tool. Each link in the chain must be independently auditable. Each link **MUST** attenuate, never amplify, the scope of the preceding link. The delegation chain depth should be bounded in practice; at Level 3, implementations **MUST** enforce a configurable maximum (DEL-9, §12.2). See §12.2 for the level-specific normative requirements. See [TS-12, TS-13, TS-14](03-threat-model.md#32-threat-scenarios) for the threat scenarios that motivate these constraints.
 
 ---
 

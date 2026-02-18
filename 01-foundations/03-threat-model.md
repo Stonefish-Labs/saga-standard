@@ -500,7 +500,7 @@ When the Guardian is deployed on a separate machine from the agent:
 | ID | Level | Requirement |
 |----|-------|-------------|
 | TOPO-1 | MUST | All Guardian communication **MUST** use TLS 1.3 or later (see [§6.4](../02-principles/06-trust-boundaries.md)) |
-| TOPO-2 | SHOULD | Mutual TLS (mTLS) **SHOULD** be used for caller authentication at Level 2+. mTLS is **MUST** at Level 3 |
+| TOPO-2 | MUST | Mutual TLS (mTLS) **MUST** be used for caller authentication at Level 2 and above. At Level 1, mTLS is **SHOULD** — strongly recommended but not a hard conformance gate; Level 1 deployments omitting mTLS MUST document the decision in their conformance statement. At Level 3, see also CONF-L3-8. See TLS-2 ([§6.4](../02-principles/06-trust-boundaries.md#64-transport-security)) for the full normative specification |
 | TOPO-3 | MUST | Token-based authentication **MUST** be enforced in addition to transport-level authentication |
 | TOPO-4 | MUST | The Guardian machine **MUST NOT** run agent processes or untrusted workloads |
 | TOPO-5 | SHOULD | The Guardian machine **SHOULD** run only the Guardian service and its dependencies |
