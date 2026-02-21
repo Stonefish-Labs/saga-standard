@@ -255,7 +255,7 @@ Tool: "Access granted."
 Use an agent-independent approval channel:
 - Native OS dialogs (agent cannot read or interact with native windows)
 - Trusted communication platforms (Slack, Teams, PagerDuty): authenticated out-of-band channel the agent cannot access
-- MFA-gated web dashboards or webhook-based approval
+- MFA-gated web dashboards with hardware second factor, or hardware-attested out-of-band approval
 - Verification codes prevent spoofing (when used)
 - Default to deny, not approve
 
@@ -485,7 +485,7 @@ Store logs in tamper-evident format. Monitor for anomalies.
 | Agent as secret holder | Agent orchestrates, tools consume |
 | Trust all tools | Per-tool tokens, scoped access |
 | Encrypt and forget | Key management + access control |
-| In-terminal approval | Agent-independent channel (native OS dialog, trusted communication platform, or webhook-based approval) |
+| In-terminal approval | Agent-independent channel (native OS dialog, trusted communication platform, or hardware-attested out-of-band approval) |
 | Global session approval | Per-profile session approval |
 | Long-lived tokens | Appropriate TTLs + rotation |
 | Bypass for performance | Optimize the secure path |

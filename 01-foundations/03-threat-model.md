@@ -98,6 +98,8 @@ The Guardian TCB includes: the Guardian binary and all dynamically linked librar
 | TS-18 | Attacker obtains valid token via memory, logs, or network interception | T3 | Medium | Unauthorized secret access via token replay | Token TTL, transport encryption, audit |
 | TS-19 | Supply-chain attack or vulnerability in Guardian binary introduces backdoor or key exfiltration capability | T4 | Low | Total secret store and audit log compromise; all architectural controls bypassed | Binary signing verification, SBOM review, remote audit log replication, reproducible builds |
 | TS-20 | In multi-principal Guardian deployments, one principal's agent accesses another principal's profiles through namespace collision or token confusion | T1, T3 | Medium | Unauthorized cross-principal secret access | Principal namespace isolation (NS-1 through NS-4 in [§4.2](04-core-concepts.md#42-core-terms)): per-principal namespaces (NS-1), profile name uniqueness within namespace (NS-2), namespace-bound token scoping (NS-3), no implicit cross-namespace access (NS-4) |
+| TS-21 | Agent reads MCP client configuration to discover tool server filesystem paths, then tampers with or replaces the server binary or source in place | T1 | High | Tool integrity compromise; secrets exfiltrated through a trusted, registered tool identity | Network-isolated tool servers, code signing with runtime verification, configuration path isolation (§3.5.4) |
+| TS-22 | Attacker or compromised agent intercepts or replays approval channel tokens (Slack OAuth, Teams webhook, HMAC callback secrets) to forge approval responses | T1, T3 | Medium | Unauthorized secret access via forged approval on out-of-band channel | Hardware-bound second factor (FIDO2/WebAuthn), channel token rotation, approval binding to hardware attestation (§3.5.5) |
 
 > **Likelihood definitions:** Likelihood assessments use the following operational scale: **High** — exploitable with widely available tools in common deployment environments, expected in targeted attacks; **Medium** — requires specific knowledge or access to the deployment environment, plausible in targeted attacks; **Low** — requires significant resources, insider access, or a chain of prior compromises.
 
@@ -106,6 +108,10 @@ The Guardian TCB includes: the Guardian binary and all dynamically linked librar
 > **Note on TS-15:** Modern agents routinely have filesystem and terminal access, including the ability to write and execute arbitrary code. An agent can create a script that mimics a legitimate tool's interface, invoke it, and use it to request secrets from the Guardian. If the agent can obtain or generate a valid token, the Guardian cannot distinguish the agent-authored tool from a legitimate one. Mitigation requires that tokens are bound to pre-registered tool identities and that the Guardian verifies tool provenance before honoring requests. See §3.5 for the full analysis.
 
 > **Note on TS-16:** The approval dialog (§10.4) shows *what* is being accessed (profile name, entry keys) but not *why*. The agent controls the conversational context in which the human decides whether to approve. An agent, whether through prompt injection or emergent behavior, may describe an operation in misleading terms ("checking dev config") while actually requesting production credentials. The dialog is architecturally sound against forgery (TS-9) and interception (TS-3), but provides no defense against the human making an informed decision based on false context. See §3.5 for the full analysis.
+
+> **Note on TS-21:** TS-15 addresses an agent *creating* a fake tool. TS-21 addresses a distinct and more dangerous variant: the agent *corrupting an existing trusted tool* by reading MCP client configuration files (e.g., `.cursor/mcp.json`, `claude_desktop_config.json`, VS Code `settings.json`) to discover filesystem paths to MCP server binaries or source code, then modifying them in place. Because the tool identity (path, registration entry) is unchanged, TS-15 mitigations such as tool registration and process attestation do not detect the compromise — the Guardian verifies the path it already trusts. The agent does not need root access; normal user-level filesystem permissions on typical developer workstations are sufficient. See §3.5.4 for the full analysis.
+
+> **Note on TS-22:** Boundary 3 requires that approval use a channel the agent cannot intercept or forge. Out-of-band channels (Slack, Teams, PagerDuty) satisfy the *channel independence* property — the agent cannot directly interact with them. However, these channels authenticate approvals using software tokens: OAuth tokens, webhook signing secrets, HMAC callback keys. These tokens exist as data and can be stolen through filesystem access, memory inspection, log exposure, or network interception. An attacker who obtains the channel token can forge approval responses without the human principal's involvement. Software-only approval channels are therefore vulnerable to token replay regardless of how well the channel itself is isolated from the agent. See §3.5.5 for the full analysis.
 
 ## 3.3 Security Boundaries
 
@@ -204,12 +210,13 @@ The approval mechanism must use a channel that the agent cannot intercept or for
 - TS-9: Attacker cannot spoof approval through fake dialog
 - TS-16: Approval dialog content is Guardian-authoritative, not agent-influenced (see §3.5.2)
 - TS-17: Rate limiting and escalating scrutiny resist approval fatigue (see §3.5.3)
+- TS-22: Hardware-bound approval factors resist approval channel token theft (see §3.5.5)
 
 **Implementation requirements:**
 
 The core security property of Boundary 3 is that the approval channel **MUST** use a mechanism the agent cannot intercept, forge, or influence. The mechanism varies by conformance level:
 
-- At **Level 2 and above**, approval **MUST** use an agent-independent channel: native OS dialogs, authenticated out-of-band services (Slack, Teams, PagerDuty — each requiring HMAC-signed callback payloads per [§4.4](04-core-concepts.md#44-approval-terms) and [DLG-5](../02-principles/06-trust-boundaries.md#63-boundary-3-approval-attestation-human--guardian)), MFA-gated web dashboards, or webhook-based approval (see [§6.3 DLG-1](../02-principles/06-trust-boundaries.md#63-boundary-3-approval-attestation-human--guardian) for the channel independence property, and [§4.4](04-core-concepts.md) for verification code format and properties)
+- At **Level 2 and above**, approval **MUST** use an agent-independent channel: native OS dialogs, authenticated out-of-band services (Slack, Teams, PagerDuty — each requiring hardware-attested approval responses per [OOB-4](../03-architecture/10-approval-policies.md#106-out-of-band-approval)), MFA-gated web dashboards with hardware second factor, or hardware-attested out-of-band approval (see [§6.3 DLG-1](../02-principles/06-trust-boundaries.md#63-boundary-3-approval-attestation-human--guardian) for the channel independence property, [§10.6](../03-architecture/10-approval-policies.md#106-out-of-band-approval) for hardware attestation requirements, and [§4.4](04-core-concepts.md) for verification code format and properties)
 - At **Level 1**, terminal-based approval is permitted provided the agent process has no access to the approval terminal's input stream (see [Conformance §13.2](../04-conformance/13-conformance.md#132-level-1-basic))
 - The default action for any approval request **MUST** be "Deny"
 - Approval dialog content **MUST** be generated entirely by the Guardian from its own authoritative records: profile name, entry keys, sensitivity flags. The dialog **MUST NOT** include any text originating from the agent or the agent's conversation
@@ -404,6 +411,104 @@ TS-16 addresses a single deceptive request. TS-17 addresses the *pattern* of req
 | Escalating confirmation | SHOULD | After a configurable number of approvals within a session, implementations **SHOULD** require escalated confirmation (e.g., re-entering a passphrase, biometric confirmation, or a mandatory 30-second delay before the Approve button becomes active). |
 | Session approval audit | MUST | The audit log **MUST** record the sequence and timing of all approval requests within a session. Anomalous patterns (many requests in short succession, alternating low-risk and high-risk profiles) **SHOULD** trigger alerts. |
 | Batch request visibility | SHOULD | If multiple profiles are requested in quick succession, implementations **SHOULD** present a consolidated view showing all pending requests, enabling the human to assess the aggregate scope rather than evaluating each request in isolation. |
+
+### 3.5.4 Tool Server Corruption via Configuration Discovery (TS-21)
+
+**Attack:** The agent reads MCP client configuration files to discover the filesystem paths of MCP server binaries or source code, then modifies the server in place. The corrupted server retains its original identity — same path, same registration, same process name — but now contains agent-injected logic that exfiltrates secrets, bypasses controls, or alters behavior.
+
+```
+┌─────────────────┐     reads config        ┌──────────────────────┐
+│     Agent       │ ──────────────────────► │  ~/.cursor/mcp.json  │
+│  (Untrusted)    │                          │  "server": "/home/   │
+│                 │     discovers path       │   user/tools/mcp-    │
+│                 │ ◄────────────────────── │   db/index.js"       │
+└────────┬────────┘                          └──────────────────────┘
+         │
+         │  writes malicious code to /home/user/tools/mcp-db/index.js
+         ▼
+┌─────────────────┐                          ┌─────────────────┐
+│  Corrupted Tool │  valid token, valid path │    Guardian     │
+│  (trusted       │ ◄──────────────────────► │  (cannot        │
+│   identity)     │                          │   distinguish)  │
+└─────────────────┘                          └─────────────────┘
+```
+
+**Why this is distinct from TS-15:**
+
+TS-15 assumes the agent creates a *new* tool from scratch and must somehow obtain a valid token and pass tool registration checks. TS-21 is worse in every dimension:
+
+1. **No token acquisition needed.** The corrupted server already has its token or will receive one through normal channels at next launch.
+2. **Tool registration is bypassed.** The binary path hasn't changed. If the Guardian maintains a list of authorized tool identities by path, the corrupted tool passes.
+3. **Process attestation is bypassed** unless the implementation performs cryptographic signature verification on every launch, not just path matching.
+4. **The attack requires only normal user permissions.** MCP client configuration files and the MCP server source/binaries they reference typically reside in the same user's home directory. The agent, running as that user, has read access to the config and write access to the server. This is not privilege escalation — it is normal filesystem access.
+
+**Configuration files known to expose tool server paths:**
+
+| Client | Configuration Path | Content |
+|--------|-------------------|---------|
+| Cursor | `.cursor/mcp.json` | Server command and args, including filesystem paths |
+| Claude Desktop | `claude_desktop_config.json` | Server command, args, and environment variables |
+| VS Code (Copilot) | `.vscode/settings.json` or workspace settings | MCP server configuration with command paths |
+| Continue | `~/.continue/config.json` | MCP server entries with filesystem paths |
+
+**Mitigations:**
+
+| Mitigation | Level | Description |
+|------------|-------|-------------|
+| Network-isolated tool servers | SHOULD | Tool servers **SHOULD** run on separate infrastructure (container, VM, or remote host) and communicate with the agent exclusively over network transport. When the server binary is not on the agent's filesystem, the agent cannot modify it regardless of its permissions. This is the strongest mitigation. |
+| Code signing with runtime verification | SHOULD | Tool server binaries or source **SHOULD** be cryptographically signed. The Guardian or a launch wrapper **SHOULD** verify the signature against a known public key before every launch. Unsigned or signature-mismatched servers **SHOULD** be refused. |
+| Configuration path isolation | SHOULD | MCP client configuration files **SHOULD** be stored with restrictive permissions (readable only by the client process, not by the agent process) or in a location the agent cannot access. Implementations **SHOULD** document the OS mechanism enforcing this separation. |
+| Immutable tool directories | SHOULD | Tool server installation directories **SHOULD** be read-only to the agent process. On systems where the agent and the user share OS credentials, this may require mounting the tool directory read-only or using OS-level mandatory access controls (SELinux, AppArmor, macOS sandboxing). |
+| Launch-time integrity check | MAY | At Level 3, implementations **MAY** compute a cryptographic hash of the tool server binary at launch time and compare it against a previously recorded value. Hash mismatches **MUST** block launch and generate an audit event. |
+
+> **Residual risk:** If the agent runs with the same OS user credentials as the MCP client and tool servers (the common case on developer workstations), configuration path isolation and immutable tool directories require explicit OS-level hardening that most development environments do not have by default. Network isolation of tool servers is the only mitigation that does not depend on OS-level access control configuration. Deployments that cannot isolate tool servers to separate infrastructure **SHOULD** treat this as an accepted risk and document it in their conformance statement.
+
+### 3.5.5 Approval Channel Token Theft (TS-22)
+
+**Attack:** Out-of-band approval channels (Slack, Teams, PagerDuty, webhook endpoints) authenticate the Guardian's approval requests and the human's responses using software tokens: OAuth access tokens, webhook signing secrets, HMAC keys, API keys. These tokens are data. They can be stolen through filesystem access (configuration files, environment variables), process memory inspection, log exposure, or network interception. An attacker — including a compromised agent with filesystem access — who obtains the approval channel token can forge approval responses, bypassing the human principal entirely.
+
+```
+┌─────────────────┐                          ┌─────────────────┐
+│     Agent       │  reads config/env/logs   │  Slack/Teams    │
+│  (or attacker)  │ ──────────────────────► │  webhook secret │
+│                 │                          │  or OAuth token │
+│                 │  forges approval callback│                 │
+│                 │ ──────────────────────► │  Guardian       │
+│                 │                          │  accepts forged │
+│                 │                          │  approval ✓     │
+└─────────────────┘                          └─────────────────┘
+
+     vs.
+
+┌─────────────────┐                          ┌─────────────────┐
+│     Agent       │  stolen token is useless │  Guardian       │
+│  (or attacker)  │ ──────────────────────► │  requires FIDO2 │
+│                 │                          │  hardware       │
+│  Has token      │  ✗ no physical key       │  attestation    │
+│  Missing key    │                          │  approval ✗     │
+└─────────────────┘                          └─────────────────┘
+```
+
+**Why this matters:**
+
+The standard's Boundary 3 requires approval channels that the agent cannot intercept or forge. HMAC-signed callbacks (per §4.4 and DLG-5) protect against *forgery by an attacker who doesn't have the signing key*. But the signing key is a software secret stored somewhere on the system. The standard's own threat model (T1, T3) assumes the agent or an attacker may have filesystem and process access. The HMAC key is only as secure as its storage, and in practice, webhook secrets and OAuth tokens for chat integrations are stored in environment variables, configuration files, or secret managers that may be accessible to the agent or to an attacker who has compromised the agent's host.
+
+This is a fundamental limitation of software-only approval factors: they reduce to a secret that, once copied, can be used from anywhere.
+
+**Mitigations:**
+
+| Mitigation | Level | Description |
+|------------|-------|-------------|
+| Hardware-bound approval factor | SHOULD | For Level 2 and above, approval responses **SHOULD** require a hardware-bound cryptographic factor that cannot be extracted or replicated in software. FIDO2/WebAuthn security keys (e.g., YubiKey) are the reference implementation: the private key never leaves the hardware, and the approval response includes a hardware attestation that the Guardian can verify. Stolen software tokens are useless without physical possession of the key. |
+| Hardware factor requirement at Level 3 | SHOULD | At Level 3, implementations **SHOULD** require hardware-bound approval factors for all profiles with `sensitive=true` entries. The conformance statement **MUST** document whether hardware-bound factors are in use and, if not, the compensating controls. |
+| Channel token rotation | MUST | Approval channel tokens (webhook secrets, OAuth tokens, HMAC keys) **MUST** be rotated on a configurable schedule. Rotation intervals **SHOULD** default to no more than 24 hours for high-sensitivity deployments. |
+| Channel token isolation | MUST | Approval channel tokens **MUST NOT** be stored in locations accessible to the agent process. The same storage isolation requirements that apply to Guardian tokens (§3.5.1, Token storage isolation) apply to approval channel credentials. |
+| Approval response binding | SHOULD | Approval responses **SHOULD** be cryptographically bound to the specific request (including a nonce, timestamp, profile name, and entry list). Replaying a captured approval response for a different request **MUST** fail validation. |
+| Approval channel audit | MUST | The Guardian **MUST** log the authentication method used for each approval response (software token only, hardware-attested, etc.). Approvals authenticated solely by software token for sensitive profiles **SHOULD** be flagged for review. |
+
+> **Design note:** HMAC-signed callbacks and OAuth tokens protect the *channel* — they ensure the message came from Slack, not from a random HTTP client. They do not protect the *decision* — they do not prove a human with physical presence made the choice. A hardware-bound factor (FIDO2 key, smart card) closes this gap by requiring something that cannot be copied, proxied, or replayed from software alone. This is the same principle behind MFA in authentication: the token proves channel identity, the hardware key proves human presence.
+
+> **Residual risk:** Hardware keys add friction and cost. Not all deployment environments can mandate them. Deployments that rely solely on software-authenticated approval channels should treat approval channel token theft as an accepted risk with compensating controls (aggressive rotation, token isolation, anomaly detection on approval timing and source IP). The risk is proportional to the value of the secrets the approval gates.
 
 ## 3.6 Guardian Deployment Topology
 

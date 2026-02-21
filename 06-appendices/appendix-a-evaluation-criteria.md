@@ -156,7 +156,7 @@ Each criterion has:
 
 **What to look for:**
 - Access denied (fail closed)
-- Optional webhook/Slack integration for remote approval
+- Optional hardware-attested out-of-band channel for remote approval (see §10.6)
 - Clear error message to the tool
 
 **Red flags:**

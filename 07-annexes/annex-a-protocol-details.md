@@ -1134,7 +1134,7 @@ Running in containerized environments (Docker, Kubernetes).
 |  - Master key from           |   |  - Connect to Guardian      |
 |    K8s secret / vault        |   |    via TCP (TLS 1.3)        |
 |  - Listen on TCP:9700        |   |  - mTLS client cert         |
-|  - Approval via webhook      |   |                             |
+|  - Approval via OOB channel  |   |                             |
 |                              |   |                             |
 |  /vault/vault.db             |   |  /app/agent                 |
 |  /vault/audit.log            |   |  /app/tools                 |
@@ -1146,7 +1146,7 @@ Running in containerized environments (Docker, Kubernetes).
                          Service Mesh / Network
 ```
 
-**Characteristics:** Separate containers for Guardian and Agent. TCP/TLS transport. Webhook-based approval. Secrets mounted from orchestrator.
+**Characteristics:** Separate containers for Guardian and Agent. TCP/TLS transport. Hardware-attested out-of-band approval. Secrets mounted from orchestrator.
 
 **Typical use:** CI/CD pipelines, containerized services, Kubernetes deployments.
 
@@ -1166,7 +1166,7 @@ Guardian and agents on separate machines.
 |  | - Listen: tls://0.0.0.0:9700 ||      |  | SAGA_CA_CERT=/path/ca.pem    ||
 |  | - TLS 1.3 server cert        ||      |  | - Uses Vault(profile=...,    ||
 |  | - Token auth enforced        ||      |  |     url="tls://A:9700")      ||
-|  | - Webhook approval callback  ||      |  | - No server code installed   ||
+|  | - OOB approval (HW-attested) ||      |  | - No server code installed   ||
 |  +-------------------------------+|      |  +-------------------------------+|
 |                                  |      |                                  |
 |  ~/.saga/                        |      |  .saga-token                     |
@@ -1178,7 +1178,7 @@ Guardian and agents on separate machines.
           +------------------------------------------+
 ```
 
-**Key differences from single-machine:** No Unix socket, no PID file, no auto-start. Client package only on agent host. Server package only on Guardian host. TLS certificates must be provisioned. Approval via webhook (no native dialog across machines).
+**Key differences from single-machine:** No Unix socket, no PID file, no auto-start. Client package only on agent host. Server package only on Guardian host. TLS certificates must be provisioned. Approval via hardware-attested out-of-band channel (no native dialog across machines).
 
 **Typical use:** Centralized secret management, multiple agent hosts sharing one Guardian, enterprise deployments.
 

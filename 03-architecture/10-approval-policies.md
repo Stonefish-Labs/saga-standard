@@ -163,37 +163,45 @@ Some deployments (CI/CD, servers, containers) cannot display interactive dialogs
 | ID | Level | Requirement |
 |----|-------|-------------|
 | HEAD-1 | MUST | Headless mode MUST be explicitly opted into |
-| HEAD-2 | MUST | When no alternative approval channel is configured (see [§10.6](#106-webhook-based-approval)), only `auto` approval profiles are accessible in headless mode |
+| HEAD-2 | MUST | When no alternative approval channel is configured (see [§10.6](#106-out-of-band-approval)), only `auto` approval profiles are accessible in headless mode |
 | HEAD-3 | MUST | When no alternative approval channel is configured, `prompt_once` or `prompt_always` profiles MUST be denied in headless mode |
 | HEAD-4 | SHOULD | Headless mode SHOULD be logged distinctly from interactive mode |
-| HEAD-5 | MAY | Implementations MAY support webhook-based or out-of-band approval channels for headless environments (see [§10.6](#106-webhook-based-approval)). When such a channel is configured and operational, profiles requiring interactive approval MAY be accessed through the alternative channel |
+| HEAD-5 | MAY | Implementations MAY support hardware-attested out-of-band approval channels for headless environments (see [§10.6](#106-out-of-band-approval)). When such a channel is configured and operational, profiles requiring interactive approval MAY be accessed through the alternative channel |
 
 ### Headless Detection
 
 Headless mode is enabled through an implementation-defined mechanism (environment variable, configuration file, or startup flag). Explicit configuration is preferred over auto-detection to prevent accidental headless operation.
 
-## 10.6 Webhook-Based Approval
+## 10.6 Out-of-Band Approval
 
-For headless environments that still need interactive approval, implementations **MAY** support webhook-based approval as an alternative approval channel. When webhook-based approval is configured and operational, it serves as the interactive approval mechanism for `prompt_once` and `prompt_always` profiles that would otherwise be denied in headless mode (see HEAD-2, HEAD-3, HEAD-5).
+For headless environments and remote deployments that cannot display interactive dialogs, implementations **MAY** support out-of-band approval as an alternative approval channel. When an out-of-band channel is configured and operational, it serves as the interactive approval mechanism for `prompt_once` and `prompt_always` profiles that would otherwise be denied in headless mode (see HEAD-2, HEAD-3, HEAD-5).
 
-### Webhook Requirements
+### Design Rationale
+
+Software-only approval channels (webhook callbacks authenticated solely by HMAC signing keys, OAuth tokens, or API keys) reduce the approval decision to a bearer token stored on disk. The standard's primary threat actor (T1, the agent) has filesystem access by design. A stolen signing key allows the agent or any attacker to forge approval responses without human involvement. This is not a theoretical concern — it is the direct consequence of the threat model's foundational assumption.
+
+Out-of-band approval therefore requires a **hardware-bound cryptographic factor** that cannot be extracted or replicated in software. The notification channel (how the human learns an approval is needed) may use any delivery mechanism. The approval response (the authorization decision) **MUST** be authenticated by a hardware-attested factor.
+
+### Out-of-Band Approval Requirements
 
 | ID | Level | Requirement |
 |----|-------|-------------|
-| WHOOK-1 | MUST | Webhook URL MUST be explicitly configured |
-| WHOOK-2 | MUST | Payload MUST include profile name, token name, partial token ID, entry keys being requested, and verification code (when implemented) |
-| WHOOK-3 | MUST | Webhook delivery MUST be asynchronous; the Guardian MUST NOT block on the HTTP response from the webhook endpoint. The Guardian waits for the approval callback (if applicable) subject to the WHOOK-8 timeout |
-| WHOOK-4 | MUST | When webhook-based approval is used as the approval channel for `prompt_once` or `prompt_always` profiles, the webhook payload MUST include a callback URL for approval/denial responses. For notification-only webhooks (e.g., alerting on `auto` profile access), callback URLs are MAY |
-| WHOOK-5 | MUST | Payload MUST NOT include secret values |
-| WHOOK-6 | MUST | Webhook connections MUST use TLS. Plaintext HTTP webhook delivery is prohibited. Implementations MAY exempt localhost webhook URLs from the TLS requirement |
-| WHOOK-7 | MUST | Webhook-based approval MUST have a configurable timeout (default: 300 seconds). If no approval response is received within the timeout, the request MUST be denied |
-| WHOOK-8 | MUST | Webhook delivery failures MUST be logged and the access request MUST be denied with a diagnostic error. Failure diagnostics are internal only; error responses to the requesting tool MUST be indistinguishable from approval denial (see [TOKEN-15](09-access-control.md)) |
-| WHOOK-9 | MUST | Callback path tokens (the token embedded in the callback URL path) MUST be generated by a CSPRNG with at least 128 bits of entropy. Each callback path token MUST be single-use: the Guardian MUST invalidate it immediately upon receiving a callback response (approve or deny) or upon WHOOK-7 timeout expiry, whichever occurs first. The Guardian MUST NOT accept a second POST to a previously-used or expired callback URL; such requests MUST be rejected with an HTTP 404 response and logged at WARN level. The webhook payload example using `abc123` as a callback URL path token is illustrative only; production implementations MUST generate tokens per this requirement |
-| WHOOK-10 | MUST | Before sending a webhook to a configured URL, the Guardian MUST validate the target URL against SSRF mitigations. Resolved IP addresses for the webhook hostname MUST NOT be loopback (`127.0.0.0/8`, `::1`), link-local (`169.254.0.0/16`, `fe80::/10`), or private RFC 1918 ranges (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`) or RFC 4193 ranges (`fc00::/7`). Exceptions are permitted only for explicitly allowlisted internal endpoints configured by the human principal and documented in the conformance statement. DNS rebinding protection MUST be applied: the IP address MUST be validated after DNS resolution and MUST be re-validated if DNS TTL expires before the webhook is delivered |
+| OOB-1 | MUST | The out-of-band approval channel **MUST** be explicitly configured. The configuration **MUST** specify the notification delivery endpoint and the hardware attestation verification mechanism |
+| OOB-2 | MUST | Notification payloads **MUST** include profile name, token name, partial token ID, entry keys being requested, and verification code (when implemented). Notification payloads **MUST NOT** include secret values |
+| OOB-3 | MUST | Notification delivery **MUST** use TLS 1.3 or later. Plaintext HTTP delivery is prohibited |
+| OOB-4 | MUST | The approval response **MUST** be authenticated by a hardware-bound cryptographic factor. Conformant mechanisms include FIDO2/WebAuthn assertions where the private key resides in a hardware authenticator (e.g., YubiKey, Titan Key, platform authenticator with Secure Enclave/TPM backing), smart card digital signatures, or equivalent hardware-attested cryptographic proofs. Software-only factors (HMAC keys, OAuth tokens, API keys, session cookies without hardware binding) are **NOT** conformant as the sole authentication of an approval response |
+| OOB-5 | MUST | The Guardian **MUST** verify the hardware attestation on every approval response. Cached or assumed attestation is prohibited. The verification **MUST** confirm that the cryptographic proof was produced by a registered hardware authenticator belonging to an authorized human principal |
+| OOB-6 | MUST | Each approval response **MUST** be cryptographically bound to the specific request: the response **MUST** include a nonce (generated per OOB-8), the profile name, and the complete entry key list. The Guardian **MUST** reject any approval response where the bound fields do not match the pending request |
+| OOB-7 | MUST | Out-of-band approval **MUST** have a configurable timeout (default: 300 seconds). If no approval response is received within the timeout, the request **MUST** be denied |
+| OOB-8 | MUST | Approval request nonces **MUST** be generated by a CSPRNG with at least 128 bits of entropy. Each nonce **MUST** be single-use: the Guardian **MUST** invalidate it immediately upon receiving an approval response (approve or deny) or upon OOB-7 timeout expiry, whichever occurs first. The Guardian **MUST NOT** accept a second response for a previously-used or expired nonce; such responses **MUST** be rejected and logged at WARN level |
+| OOB-9 | MUST | Notification delivery failures **MUST** be logged and the access request **MUST** be denied with a diagnostic error. Failure diagnostics are internal only; error responses to the requesting tool **MUST** be indistinguishable from approval denial (see [TOKEN-15](09-access-control.md)) |
+| OOB-10 | MUST | Before sending a notification to a configured URL, the Guardian **MUST** validate the target URL against SSRF mitigations. Resolved IP addresses for the notification hostname **MUST NOT** be loopback (`127.0.0.0/8`, `::1`), link-local (`169.254.0.0/16`, `fe80::/10`), or private RFC 1918 ranges (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`) or RFC 4193 ranges (`fc00::/7`). Exceptions are permitted only for explicitly allowlisted internal endpoints configured by the human principal and documented in the conformance statement. DNS rebinding protection **MUST** be applied: the IP address **MUST** be validated after DNS resolution and **MUST** be re-validated if DNS TTL expires before the notification is delivered |
 
-### Webhook Payload Example
+> **Design note:** OOB-4 is the critical requirement. A notification channel (Slack, Teams, PagerDuty, email, custom dashboard) may use any delivery mechanism to inform the human that an approval is needed. But the *response* — the act of authorizing secret access — must prove that a human with physical possession of a registered hardware key made the decision. This separates *notification* (which can use software-authenticated channels) from *authorization* (which cannot). Stolen software tokens can forge notifications; they cannot forge hardware attestations.
 
-> **Note:** The following example illustrates a conformant webhook payload. The specific field names and structure are provided in [Annex A](../07-annexes/annex-a-protocol-details.md).
+### Notification Payload Example
+
+> **Note:** The following example illustrates a conformant notification payload. The specific field names and structure are provided in [Annex A](../07-annexes/annex-a-protocol-details.md).
 
 ```json
 {
@@ -204,7 +212,7 @@ For headless environments that still need interactive approval, implementations 
   "entries": ["db_host", "db_user", "db_password"],
   "verification_code": "ABCD-1234",
   "timestamp": "2026-02-16T12:00:00Z",
-  "callback_url": "https://guardian.internal/approval/abc123"
+  "approve_url": "https://guardian.internal/approval/a8f3...c9e1"
 }
 ```
 
@@ -212,15 +220,16 @@ For headless environments that still need interactive approval, implementations 
 
 ```
 1. Tool requests access (prompt_once or prompt_always profile in headless)
-2. Guardian sends webhook to configured endpoint (e.g., Slack, PagerDuty, custom service)
-3. Notification includes profile, entries, and verification code
-4. Human reviews and clicks Approve/Deny in notification
-5. Notification service calls Guardian callback URL
-6. Guardian grants or denies access
-7. Tool receives response
+2. Guardian sends notification to configured channel (e.g., Slack, PagerDuty, dashboard)
+3. Notification includes profile, entries, verification code, and approval URL
+4. Human reviews notification and navigates to approval endpoint
+5. Human authenticates approval with hardware key (FIDO2/WebAuthn assertion)
+6. Approval endpoint verifies hardware attestation and forwards to Guardian
+7. Guardian verifies attestation, nonce binding, and grants or denies access
+8. Tool receives response
 ```
 
-If the callback is not received within the configured timeout (WHOOK-7), the Guardian denies the request.
+If no hardware-attested approval response is received within the configured timeout (OOB-7), the Guardian denies the request.
 
 ## 10.7 Policy Configuration
 

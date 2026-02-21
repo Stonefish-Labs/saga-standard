@@ -1,10 +1,10 @@
 # SAGA: Secret Access Governance for Agents
 
-## Working Draft — 2026-02-18
+## Working Draft — 2026-02-21
 
 **Standard Identifier:** SAGA-2026-01
 **Status:** Working Draft
-**Date:** 2026-02-18
+**Date:** 2026-02-21
 
 ---
 
@@ -71,6 +71,8 @@
     - [3.5.1 Tool Substitution (TS-15)](#351-tool-substitution-ts-15)
     - [3.5.2 Approval Social Engineering (TS-16)](#352-approval-social-engineering-ts-16)
     - [3.5.3 Approval Fatigue Exploitation (TS-17)](#353-approval-fatigue-exploitation-ts-17)
+    - [3.5.4 Tool Server Corruption via Configuration Discovery (TS-21)](#354-tool-server-corruption-via-configuration-discovery-ts-21)
+    - [3.5.5 Approval Channel Token Theft (TS-22)](#355-approval-channel-token-theft-ts-22)
   - [3.6 Guardian Deployment Topology](#36-guardian-deployment-topology)
     - [3.6.1 Co-Located Deployment](#361-co-located-deployment)
     - [3.6.2 Remote Deployment](#362-remote-deployment)
@@ -227,9 +229,10 @@
   - [10.5 Headless Operation](#105-headless-operation)
     - [Headless Mode Requirements](#headless-mode-requirements)
     - [Headless Detection](#headless-detection)
-  - [10.6 Webhook-Based Approval](#106-webhook-based-approval)
-    - [Webhook Requirements](#webhook-requirements)
-    - [Webhook Payload Example](#webhook-payload-example)
+  - [10.6 Out-of-Band Approval](#106-out-of-band-approval)
+    - [Design Rationale](#design-rationale)
+    - [Out-of-Band Approval Requirements](#out-of-band-approval-requirements)
+    - [Notification Payload Example](#notification-payload-example)
     - [Integration Pattern](#integration-pattern)
   - [10.7 Policy Configuration](#107-policy-configuration)
 - [11. Secret Lifecycle](#11-secret-lifecycle)
@@ -1121,6 +1124,8 @@ The Guardian TCB includes: the Guardian binary and all dynamically linked librar
 | TS-18 | Attacker obtains valid token via memory, logs, or network interception | T3 | Medium | Unauthorized secret access via token replay | Token TTL, transport encryption, audit |
 | TS-19 | Supply-chain attack or vulnerability in Guardian binary introduces backdoor or key exfiltration capability | T4 | Low | Total secret store and audit log compromise; all architectural controls bypassed | Binary signing verification, SBOM review, remote audit log replication, reproducible builds |
 | TS-20 | In multi-principal Guardian deployments, one principal's agent accesses another principal's profiles through namespace collision or token confusion | T1, T3 | Medium | Unauthorized cross-principal secret access | Principal namespace isolation (NS-1 through NS-4 in [§4.2](04-core-concepts.md#42-core-terms)): per-principal namespaces (NS-1), profile name uniqueness within namespace (NS-2), namespace-bound token scoping (NS-3), no implicit cross-namespace access (NS-4) |
+| TS-21 | Agent reads MCP client configuration to discover tool server filesystem paths, then tampers with or replaces the server binary or source in place | T1 | High | Tool integrity compromise; secrets exfiltrated through a trusted, registered tool identity | Network-isolated tool servers, code signing with runtime verification, configuration path isolation (§3.5.4) |
+| TS-22 | Attacker or compromised agent intercepts or replays approval channel tokens (Slack OAuth, Teams webhook, HMAC callback secrets) to forge approval responses | T1, T3 | Medium | Unauthorized secret access via forged approval on out-of-band channel | Hardware-bound second factor (FIDO2/WebAuthn), channel token rotation, approval binding to hardware attestation (§3.5.5) |
 
 > **Likelihood definitions:** Likelihood assessments use the following operational scale: **High** — exploitable with widely available tools in common deployment environments, expected in targeted attacks; **Medium** — requires specific knowledge or access to the deployment environment, plausible in targeted attacks; **Low** — requires significant resources, insider access, or a chain of prior compromises.
 
@@ -1129,6 +1134,10 @@ The Guardian TCB includes: the Guardian binary and all dynamically linked librar
 > **Note on TS-15:** Modern agents routinely have filesystem and terminal access, including the ability to write and execute arbitrary code. An agent can create a script that mimics a legitimate tool's interface, invoke it, and use it to request secrets from the Guardian. If the agent can obtain or generate a valid token, the Guardian cannot distinguish the agent-authored tool from a legitimate one. Mitigation requires that tokens are bound to pre-registered tool identities and that the Guardian verifies tool provenance before honoring requests. See §3.5 for the full analysis.
 
 > **Note on TS-16:** The approval dialog (§10.4) shows *what* is being accessed (profile name, entry keys) but not *why*. The agent controls the conversational context in which the human decides whether to approve. An agent, whether through prompt injection or emergent behavior, may describe an operation in misleading terms ("checking dev config") while actually requesting production credentials. The dialog is architecturally sound against forgery (TS-9) and interception (TS-3), but provides no defense against the human making an informed decision based on false context. See §3.5 for the full analysis.
+
+> **Note on TS-21:** TS-15 addresses an agent *creating* a fake tool. TS-21 addresses a distinct and more dangerous variant: the agent *corrupting an existing trusted tool* by reading MCP client configuration files (e.g., `.cursor/mcp.json`, `claude_desktop_config.json`, VS Code `settings.json`) to discover filesystem paths to MCP server binaries or source code, then modifying them in place. Because the tool identity (path, registration entry) is unchanged, TS-15 mitigations such as tool registration and process attestation do not detect the compromise — the Guardian verifies the path it already trusts. The agent does not need root access; normal user-level filesystem permissions on typical developer workstations are sufficient. See §3.5.4 for the full analysis.
+
+> **Note on TS-22:** Boundary 3 requires that approval use a channel the agent cannot intercept or forge. Out-of-band channels (Slack, Teams, PagerDuty) satisfy the *channel independence* property — the agent cannot directly interact with them. However, these channels authenticate approvals using software tokens: OAuth tokens, webhook signing secrets, HMAC callback keys. These tokens exist as data and can be stolen through filesystem access, memory inspection, log exposure, or network interception. An attacker who obtains the channel token can forge approval responses without the human principal's involvement. Software-only approval channels are therefore vulnerable to token replay regardless of how well the channel itself is isolated from the agent. See §3.5.5 for the full analysis.
 
 ## 3.3 Security Boundaries
 
@@ -1227,12 +1236,13 @@ The approval mechanism must use a channel that the agent cannot intercept or for
 - TS-9: Attacker cannot spoof approval through fake dialog
 - TS-16: Approval dialog content is Guardian-authoritative, not agent-influenced (see §3.5.2)
 - TS-17: Rate limiting and escalating scrutiny resist approval fatigue (see §3.5.3)
+- TS-22: Hardware-bound approval factors resist approval channel token theft (see §3.5.5)
 
 **Implementation requirements:**
 
 The core security property of Boundary 3 is that the approval channel **MUST** use a mechanism the agent cannot intercept, forge, or influence. The mechanism varies by conformance level:
 
-- At **Level 2 and above**, approval **MUST** use an agent-independent channel: native OS dialogs, authenticated out-of-band services (Slack, Teams, PagerDuty — each requiring HMAC-signed callback payloads per [§4.4](04-core-concepts.md#44-approval-terms) and [DLG-5](../02-principles/06-trust-boundaries.md#63-boundary-3-approval-attestation-human--guardian)), MFA-gated web dashboards, or webhook-based approval (see [§6.3 DLG-1](../02-principles/06-trust-boundaries.md#63-boundary-3-approval-attestation-human--guardian) for the channel independence property, and [§4.4](04-core-concepts.md) for verification code format and properties)
+- At **Level 2 and above**, approval **MUST** use an agent-independent channel: native OS dialogs, authenticated out-of-band services (Slack, Teams, PagerDuty — each requiring hardware-attested approval responses per [OOB-4](../03-architecture/10-approval-policies.md#106-out-of-band-approval)), MFA-gated web dashboards with hardware second factor, or hardware-attested out-of-band approval (see [§6.3 DLG-1](../02-principles/06-trust-boundaries.md#63-boundary-3-approval-attestation-human--guardian) for the channel independence property, [§10.6](../03-architecture/10-approval-policies.md#106-out-of-band-approval) for hardware attestation requirements, and [§4.4](04-core-concepts.md) for verification code format and properties)
 - At **Level 1**, terminal-based approval is permitted provided the agent process has no access to the approval terminal's input stream (see [Conformance §13.2](../04-conformance/13-conformance.md#132-level-1-basic))
 - The default action for any approval request **MUST** be "Deny"
 - Approval dialog content **MUST** be generated entirely by the Guardian from its own authoritative records: profile name, entry keys, sensitivity flags. The dialog **MUST NOT** include any text originating from the agent or the agent's conversation
@@ -1427,6 +1437,104 @@ TS-16 addresses a single deceptive request. TS-17 addresses the *pattern* of req
 | Escalating confirmation | SHOULD | After a configurable number of approvals within a session, implementations **SHOULD** require escalated confirmation (e.g., re-entering a passphrase, biometric confirmation, or a mandatory 30-second delay before the Approve button becomes active). |
 | Session approval audit | MUST | The audit log **MUST** record the sequence and timing of all approval requests within a session. Anomalous patterns (many requests in short succession, alternating low-risk and high-risk profiles) **SHOULD** trigger alerts. |
 | Batch request visibility | SHOULD | If multiple profiles are requested in quick succession, implementations **SHOULD** present a consolidated view showing all pending requests, enabling the human to assess the aggregate scope rather than evaluating each request in isolation. |
+
+### 3.5.4 Tool Server Corruption via Configuration Discovery (TS-21)
+
+**Attack:** The agent reads MCP client configuration files to discover the filesystem paths of MCP server binaries or source code, then modifies the server in place. The corrupted server retains its original identity — same path, same registration, same process name — but now contains agent-injected logic that exfiltrates secrets, bypasses controls, or alters behavior.
+
+```
+┌─────────────────┐     reads config        ┌──────────────────────┐
+│     Agent       │ ──────────────────────► │  ~/.cursor/mcp.json  │
+│  (Untrusted)    │                          │  "server": "/home/   │
+│                 │     discovers path       │   user/tools/mcp-    │
+│                 │ ◄────────────────────── │   db/index.js"       │
+└────────┬────────┘                          └──────────────────────┘
+         │
+         │  writes malicious code to /home/user/tools/mcp-db/index.js
+         ▼
+┌─────────────────┐                          ┌─────────────────┐
+│  Corrupted Tool │  valid token, valid path │    Guardian     │
+│  (trusted       │ ◄──────────────────────► │  (cannot        │
+│   identity)     │                          │   distinguish)  │
+└─────────────────┘                          └─────────────────┘
+```
+
+**Why this is distinct from TS-15:**
+
+TS-15 assumes the agent creates a *new* tool from scratch and must somehow obtain a valid token and pass tool registration checks. TS-21 is worse in every dimension:
+
+1. **No token acquisition needed.** The corrupted server already has its token or will receive one through normal channels at next launch.
+2. **Tool registration is bypassed.** The binary path hasn't changed. If the Guardian maintains a list of authorized tool identities by path, the corrupted tool passes.
+3. **Process attestation is bypassed** unless the implementation performs cryptographic signature verification on every launch, not just path matching.
+4. **The attack requires only normal user permissions.** MCP client configuration files and the MCP server source/binaries they reference typically reside in the same user's home directory. The agent, running as that user, has read access to the config and write access to the server. This is not privilege escalation — it is normal filesystem access.
+
+**Configuration files known to expose tool server paths:**
+
+| Client | Configuration Path | Content |
+|--------|-------------------|---------|
+| Cursor | `.cursor/mcp.json` | Server command and args, including filesystem paths |
+| Claude Desktop | `claude_desktop_config.json` | Server command, args, and environment variables |
+| VS Code (Copilot) | `.vscode/settings.json` or workspace settings | MCP server configuration with command paths |
+| Continue | `~/.continue/config.json` | MCP server entries with filesystem paths |
+
+**Mitigations:**
+
+| Mitigation | Level | Description |
+|------------|-------|-------------|
+| Network-isolated tool servers | SHOULD | Tool servers **SHOULD** run on separate infrastructure (container, VM, or remote host) and communicate with the agent exclusively over network transport. When the server binary is not on the agent's filesystem, the agent cannot modify it regardless of its permissions. This is the strongest mitigation. |
+| Code signing with runtime verification | SHOULD | Tool server binaries or source **SHOULD** be cryptographically signed. The Guardian or a launch wrapper **SHOULD** verify the signature against a known public key before every launch. Unsigned or signature-mismatched servers **SHOULD** be refused. |
+| Configuration path isolation | SHOULD | MCP client configuration files **SHOULD** be stored with restrictive permissions (readable only by the client process, not by the agent process) or in a location the agent cannot access. Implementations **SHOULD** document the OS mechanism enforcing this separation. |
+| Immutable tool directories | SHOULD | Tool server installation directories **SHOULD** be read-only to the agent process. On systems where the agent and the user share OS credentials, this may require mounting the tool directory read-only or using OS-level mandatory access controls (SELinux, AppArmor, macOS sandboxing). |
+| Launch-time integrity check | MAY | At Level 3, implementations **MAY** compute a cryptographic hash of the tool server binary at launch time and compare it against a previously recorded value. Hash mismatches **MUST** block launch and generate an audit event. |
+
+> **Residual risk:** If the agent runs with the same OS user credentials as the MCP client and tool servers (the common case on developer workstations), configuration path isolation and immutable tool directories require explicit OS-level hardening that most development environments do not have by default. Network isolation of tool servers is the only mitigation that does not depend on OS-level access control configuration. Deployments that cannot isolate tool servers to separate infrastructure **SHOULD** treat this as an accepted risk and document it in their conformance statement.
+
+### 3.5.5 Approval Channel Token Theft (TS-22)
+
+**Attack:** Out-of-band approval channels (Slack, Teams, PagerDuty, webhook endpoints) authenticate the Guardian's approval requests and the human's responses using software tokens: OAuth access tokens, webhook signing secrets, HMAC keys, API keys. These tokens are data. They can be stolen through filesystem access (configuration files, environment variables), process memory inspection, log exposure, or network interception. An attacker — including a compromised agent with filesystem access — who obtains the approval channel token can forge approval responses, bypassing the human principal entirely.
+
+```
+┌─────────────────┐                          ┌─────────────────┐
+│     Agent       │  reads config/env/logs   │  Slack/Teams    │
+│  (or attacker)  │ ──────────────────────► │  webhook secret │
+│                 │                          │  or OAuth token │
+│                 │  forges approval callback│                 │
+│                 │ ──────────────────────► │  Guardian       │
+│                 │                          │  accepts forged │
+│                 │                          │  approval ✓     │
+└─────────────────┘                          └─────────────────┘
+
+     vs.
+
+┌─────────────────┐                          ┌─────────────────┐
+│     Agent       │  stolen token is useless │  Guardian       │
+│  (or attacker)  │ ──────────────────────► │  requires FIDO2 │
+│                 │                          │  hardware       │
+│  Has token      │  ✗ no physical key       │  attestation    │
+│  Missing key    │                          │  approval ✗     │
+└─────────────────┘                          └─────────────────┘
+```
+
+**Why this matters:**
+
+The standard's Boundary 3 requires approval channels that the agent cannot intercept or forge. HMAC-signed callbacks (per §4.4 and DLG-5) protect against *forgery by an attacker who doesn't have the signing key*. But the signing key is a software secret stored somewhere on the system. The standard's own threat model (T1, T3) assumes the agent or an attacker may have filesystem and process access. The HMAC key is only as secure as its storage, and in practice, webhook secrets and OAuth tokens for chat integrations are stored in environment variables, configuration files, or secret managers that may be accessible to the agent or to an attacker who has compromised the agent's host.
+
+This is a fundamental limitation of software-only approval factors: they reduce to a secret that, once copied, can be used from anywhere.
+
+**Mitigations:**
+
+| Mitigation | Level | Description |
+|------------|-------|-------------|
+| Hardware-bound approval factor | SHOULD | For Level 2 and above, approval responses **SHOULD** require a hardware-bound cryptographic factor that cannot be extracted or replicated in software. FIDO2/WebAuthn security keys (e.g., YubiKey) are the reference implementation: the private key never leaves the hardware, and the approval response includes a hardware attestation that the Guardian can verify. Stolen software tokens are useless without physical possession of the key. |
+| Hardware factor requirement at Level 3 | SHOULD | At Level 3, implementations **SHOULD** require hardware-bound approval factors for all profiles with `sensitive=true` entries. The conformance statement **MUST** document whether hardware-bound factors are in use and, if not, the compensating controls. |
+| Channel token rotation | MUST | Approval channel tokens (webhook secrets, OAuth tokens, HMAC keys) **MUST** be rotated on a configurable schedule. Rotation intervals **SHOULD** default to no more than 24 hours for high-sensitivity deployments. |
+| Channel token isolation | MUST | Approval channel tokens **MUST NOT** be stored in locations accessible to the agent process. The same storage isolation requirements that apply to Guardian tokens (§3.5.1, Token storage isolation) apply to approval channel credentials. |
+| Approval response binding | SHOULD | Approval responses **SHOULD** be cryptographically bound to the specific request (including a nonce, timestamp, profile name, and entry list). Replaying a captured approval response for a different request **MUST** fail validation. |
+| Approval channel audit | MUST | The Guardian **MUST** log the authentication method used for each approval response (software token only, hardware-attested, etc.). Approvals authenticated solely by software token for sensitive profiles **SHOULD** be flagged for review. |
+
+> **Design note:** HMAC-signed callbacks and OAuth tokens protect the *channel* — they ensure the message came from Slack, not from a random HTTP client. They do not protect the *decision* — they do not prove a human with physical presence made the choice. A hardware-bound factor (FIDO2 key, smart card) closes this gap by requiring something that cannot be copied, proxied, or replayed from software alone. This is the same principle behind MFA in authentication: the token proves channel identity, the hardware key proves human presence.
+
+> **Residual risk:** Hardware keys add friction and cost. Not all deployment environments can mandate them. Deployments that rely solely on software-authenticated approval channels should treat approval channel token theft as an accepted risk with compensating controls (aggressive rotation, token isolation, anomaly detection on approval timing and source IP). The risk is proportional to the value of the secrets the approval gates.
 
 ## 3.6 Guardian Deployment Topology
 
@@ -1710,7 +1818,7 @@ The property that the human principal can verify their approval is being deliver
 |-------------|-----------|----------------------|
 | Interactive (desktop) | Agent-independent channel: native OS dialog, trusted communication platform (Slack, Teams, PagerDuty with authenticated callbacks), or MFA-gated web dashboard, optionally with a Guardian-generated verification code that the human cross-checks against the requesting tool's display | The agent cannot intercept, forge, or dismiss the approval interaction; the channel itself is authenticated, and verification codes (when used) confirm the dialog and the request share a Guardian-authenticated origin |
 | Interactive (terminal) | Terminal-based prompt on a stream the agent process cannot access | The agent has no access to the approval terminal's input stream (see [Conformance §13.2](../04-conformance/13-conformance.md#132-level-1-basic)) |
-| Headless (CI/CD, server) | Out-of-band approval via authenticated webhook, chat integration, or equivalent channel | The channel itself is authenticated (TLS, HMAC-signed payloads, or equivalent); the agent has no access to the approval channel's credentials |
+| Headless (CI/CD, server) | Out-of-band approval via hardware-attested channel (FIDO2/WebAuthn-gated dashboard, chat integration with hardware second factor, or equivalent) | The approval response is authenticated by a hardware-bound cryptographic factor that cannot be extracted or replicated in software (see [OOB-4](../03-architecture/10-approval-policies.md#106-out-of-band-approval)); the agent has no path to forge hardware attestations regardless of filesystem or network access |
 
 **Verification codes** are one concrete mechanism for interactive environments. When used, they **MUST** be generated from a cryptographically secure random source and **MUST** be unique within the preceding 24-hour window (Guardian implementations **MUST** maintain a short-term issued-code record for at least 24 hours to enforce this uniqueness guarantee). The 24-hour window, combined with the 48-bit entropy requirement and the single-use invalidation requirement, bounds pre-computation attacks to a manageable search space. Implementations **MUST** produce a code of at least 48 bits of entropy. The recommended format is a group of 3–4 uppercase alphanumeric segments separated by hyphens (e.g., `X7KP-3RMQ-4NST`). Each code **MUST** be single-use: the Guardian **MUST** invalidate it immediately upon approval or denial, or upon expiry of the pending request timeout, whichever occurs first. The Guardian **MUST** enforce a maximum of 3 failed verification code attempts per pending approval request; upon exceeding this limit the Guardian **MUST** deny the pending request and generate a WARN-level audit entry. Code comparisons **MUST** use a constant-time comparison function to prevent timing oracle attacks. The verification code **MUST** be delivered to the human principal through a channel the agent process cannot access. Delivery through tool stdout, agent conversation turns, or any stream the agent process can read is **NOT** conformant under any circumstances, including single-terminal deployments. Implementations that cannot guarantee a separate delivery channel **MUST** use a different anti-spoofing mechanism (e.g., a native OS dialog rendered by the Guardian at the OS privilege boundary, a biometric-gated system approval prompt, or an MFA-gated approval channel) rather than degrading to an agent-observable verification code delivery path.
 
@@ -2097,11 +2205,11 @@ The approval mechanism must use a channel that the agent cannot intercept or for
 
 ### Approval Channel Requirements
 
-> **Terminology:** In the following requirements, "dialog" refers to the approval presentation regardless of channel mechanism: native OS window, messaging service notification (Slack, Teams), web dashboard, webhook callback interface, or any other conformant channel. Requirements apply equally to all channel types.
+> **Terminology:** In the following requirements, "dialog" refers to the approval presentation regardless of channel mechanism: native OS window, messaging service notification (Slack, Teams), web dashboard, hardware-attested out-of-band interface, or any other conformant channel. Requirements apply equally to all channel types.
 
 | ID | Level | Requirement |
 |----|-------|-------------|
-| DLG-1 | MUST | The approval channel MUST be independent of the agent process; the agent MUST NOT be able to intercept, forge, inject input into, or dismiss the approval interaction. At Level 2 and above, conformant channels include native OS dialogs, authenticated out-of-band services (e.g., Slack, Teams, PagerDuty with authenticated callbacks), MFA-gated web dashboards, and webhook-based approval ([§10.6](../03-architecture/10-approval-policies.md#106-webhook-based-approval)). At Level 1, terminal-based approval is permitted provided the agent process has no access to the approval terminal's input stream (see [Conformance §13.2](../04-conformance/13-conformance.md#132-level-1-basic)). The specific channel mechanism is implementation-defined; conformance is determined by the channel independence property, not the mechanism |
+| DLG-1 | MUST | The approval channel MUST be independent of the agent process; the agent MUST NOT be able to intercept, forge, inject input into, or dismiss the approval interaction. At Level 2 and above, conformant channels include native OS dialogs, authenticated out-of-band services (e.g., Slack, Teams, PagerDuty with hardware-attested approval responses), MFA-gated web dashboards with hardware second factor, and hardware-attested out-of-band approval ([§10.6](../03-architecture/10-approval-policies.md#106-out-of-band-approval)). At Level 1, terminal-based approval is permitted provided the agent process has no access to the approval terminal's input stream (see [Conformance §13.2](../04-conformance/13-conformance.md#132-level-1-basic)). The specific channel mechanism is implementation-defined; conformance is determined by the channel independence property and the hardware attestation requirement (OOB-4), not the mechanism |
 | DLG-2 | MUST | Dialog MUST display the profile name |
 | DLG-3 | MUST | Dialog MUST display the token name and partial token ID |
 | DLG-4 | MUST | Dialog MUST display the complete list of entry keys being requested without truncation. If the list is long, the dialog MUST use scrolling or pagination, not ellipsis (see [§3.5.2](../01-foundations/03-threat-model.md#352-approval-social-engineering-ts-16), TS-16) |
@@ -2163,7 +2271,7 @@ Awaiting approval...
 - MUST be generated from a cryptographically secure random source and MUST be unique within the preceding 24-hour window (Guardian implementations MUST maintain a short-term issued-code record for at least 24 hours, per [§4.4](../01-foundations/04-core-concepts.md#44-approval-terms)). The 24-hour window is the canonical uniqueness scope; session-scoped uniqueness alone is not sufficient to bound pre-computation attacks as described in §4.4
 - Valid only for the duration of the associated approval dialog
 
-> **Implementation note:** The verification code is one anti-spoofing mechanism. The standard mandates the *property* (the agent cannot forge, intercept, or influence the approval verification), not the *mechanism*. Deployments where the approval channel itself is authenticated (e.g., MFA-gated dashboards, HMAC-signed webhooks, biometric-locked desktop sessions) already satisfy this property. In such deployments, verification codes are redundant overhead. The standard recommends verification codes for desktop environments lacking these controls, and requires them at Level 3 as defense-in-depth.
+> **Implementation note:** The verification code is one anti-spoofing mechanism. The standard mandates the *property* (the agent cannot forge, intercept, or influence the approval verification), not the *mechanism*. Deployments where the approval channel itself is authenticated by a hardware-bound factor (e.g., MFA-gated dashboards with FIDO2/WebAuthn, hardware-attested out-of-band approval per OOB-4, biometric-locked desktop sessions) already satisfy this property. In such deployments, verification codes are redundant overhead. The standard recommends verification codes for desktop environments lacking these controls, and requires them at Level 3 as defense-in-depth.
 
 > **Relay attack consideration:** If verification codes are implemented, be aware that the agent typically captures the tool's terminal output and could learn the verification code. The anti-spoofing property then depends on the agent being unable to spawn native OS dialogs. On platforms where this cannot be enforced, implementations SHOULD display the verification code through a channel the agent does not observe (e.g., direct stderr if the agent only captures stdout, or a Guardian-provided side-channel).
 
@@ -3082,37 +3190,45 @@ Some deployments (CI/CD, servers, containers) cannot display interactive dialogs
 | ID | Level | Requirement |
 |----|-------|-------------|
 | HEAD-1 | MUST | Headless mode MUST be explicitly opted into |
-| HEAD-2 | MUST | When no alternative approval channel is configured (see [§10.6](#106-webhook-based-approval)), only `auto` approval profiles are accessible in headless mode |
+| HEAD-2 | MUST | When no alternative approval channel is configured (see [§10.6](#106-out-of-band-approval)), only `auto` approval profiles are accessible in headless mode |
 | HEAD-3 | MUST | When no alternative approval channel is configured, `prompt_once` or `prompt_always` profiles MUST be denied in headless mode |
 | HEAD-4 | SHOULD | Headless mode SHOULD be logged distinctly from interactive mode |
-| HEAD-5 | MAY | Implementations MAY support webhook-based or out-of-band approval channels for headless environments (see [§10.6](#106-webhook-based-approval)). When such a channel is configured and operational, profiles requiring interactive approval MAY be accessed through the alternative channel |
+| HEAD-5 | MAY | Implementations MAY support hardware-attested out-of-band approval channels for headless environments (see [§10.6](#106-out-of-band-approval)). When such a channel is configured and operational, profiles requiring interactive approval MAY be accessed through the alternative channel |
 
 ### Headless Detection
 
 Headless mode is enabled through an implementation-defined mechanism (environment variable, configuration file, or startup flag). Explicit configuration is preferred over auto-detection to prevent accidental headless operation.
 
-## 10.6 Webhook-Based Approval
+## 10.6 Out-of-Band Approval
 
-For headless environments that still need interactive approval, implementations **MAY** support webhook-based approval as an alternative approval channel. When webhook-based approval is configured and operational, it serves as the interactive approval mechanism for `prompt_once` and `prompt_always` profiles that would otherwise be denied in headless mode (see HEAD-2, HEAD-3, HEAD-5).
+For headless environments and remote deployments that cannot display interactive dialogs, implementations **MAY** support out-of-band approval as an alternative approval channel. When an out-of-band channel is configured and operational, it serves as the interactive approval mechanism for `prompt_once` and `prompt_always` profiles that would otherwise be denied in headless mode (see HEAD-2, HEAD-3, HEAD-5).
 
-### Webhook Requirements
+### Design Rationale
+
+Software-only approval channels (webhook callbacks authenticated solely by HMAC signing keys, OAuth tokens, or API keys) reduce the approval decision to a bearer token stored on disk. The standard's primary threat actor (T1, the agent) has filesystem access by design. A stolen signing key allows the agent or any attacker to forge approval responses without human involvement. This is not a theoretical concern — it is the direct consequence of the threat model's foundational assumption.
+
+Out-of-band approval therefore requires a **hardware-bound cryptographic factor** that cannot be extracted or replicated in software. The notification channel (how the human learns an approval is needed) may use any delivery mechanism. The approval response (the authorization decision) **MUST** be authenticated by a hardware-attested factor.
+
+### Out-of-Band Approval Requirements
 
 | ID | Level | Requirement |
 |----|-------|-------------|
-| WHOOK-1 | MUST | Webhook URL MUST be explicitly configured |
-| WHOOK-2 | MUST | Payload MUST include profile name, token name, partial token ID, entry keys being requested, and verification code (when implemented) |
-| WHOOK-3 | MUST | Webhook delivery MUST be asynchronous; the Guardian MUST NOT block on the HTTP response from the webhook endpoint. The Guardian waits for the approval callback (if applicable) subject to the WHOOK-8 timeout |
-| WHOOK-4 | MUST | When webhook-based approval is used as the approval channel for `prompt_once` or `prompt_always` profiles, the webhook payload MUST include a callback URL for approval/denial responses. For notification-only webhooks (e.g., alerting on `auto` profile access), callback URLs are MAY |
-| WHOOK-5 | MUST | Payload MUST NOT include secret values |
-| WHOOK-6 | MUST | Webhook connections MUST use TLS. Plaintext HTTP webhook delivery is prohibited. Implementations MAY exempt localhost webhook URLs from the TLS requirement |
-| WHOOK-7 | MUST | Webhook-based approval MUST have a configurable timeout (default: 300 seconds). If no approval response is received within the timeout, the request MUST be denied |
-| WHOOK-8 | MUST | Webhook delivery failures MUST be logged and the access request MUST be denied with a diagnostic error. Failure diagnostics are internal only; error responses to the requesting tool MUST be indistinguishable from approval denial (see [TOKEN-15](09-access-control.md)) |
-| WHOOK-9 | MUST | Callback path tokens (the token embedded in the callback URL path) MUST be generated by a CSPRNG with at least 128 bits of entropy. Each callback path token MUST be single-use: the Guardian MUST invalidate it immediately upon receiving a callback response (approve or deny) or upon WHOOK-7 timeout expiry, whichever occurs first. The Guardian MUST NOT accept a second POST to a previously-used or expired callback URL; such requests MUST be rejected with an HTTP 404 response and logged at WARN level. The webhook payload example using `abc123` as a callback URL path token is illustrative only; production implementations MUST generate tokens per this requirement |
-| WHOOK-10 | MUST | Before sending a webhook to a configured URL, the Guardian MUST validate the target URL against SSRF mitigations. Resolved IP addresses for the webhook hostname MUST NOT be loopback (`127.0.0.0/8`, `::1`), link-local (`169.254.0.0/16`, `fe80::/10`), or private RFC 1918 ranges (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`) or RFC 4193 ranges (`fc00::/7`). Exceptions are permitted only for explicitly allowlisted internal endpoints configured by the human principal and documented in the conformance statement. DNS rebinding protection MUST be applied: the IP address MUST be validated after DNS resolution and MUST be re-validated if DNS TTL expires before the webhook is delivered |
+| OOB-1 | MUST | The out-of-band approval channel **MUST** be explicitly configured. The configuration **MUST** specify the notification delivery endpoint and the hardware attestation verification mechanism |
+| OOB-2 | MUST | Notification payloads **MUST** include profile name, token name, partial token ID, entry keys being requested, and verification code (when implemented). Notification payloads **MUST NOT** include secret values |
+| OOB-3 | MUST | Notification delivery **MUST** use TLS 1.3 or later. Plaintext HTTP delivery is prohibited |
+| OOB-4 | MUST | The approval response **MUST** be authenticated by a hardware-bound cryptographic factor. Conformant mechanisms include FIDO2/WebAuthn assertions where the private key resides in a hardware authenticator (e.g., YubiKey, Titan Key, platform authenticator with Secure Enclave/TPM backing), smart card digital signatures, or equivalent hardware-attested cryptographic proofs. Software-only factors (HMAC keys, OAuth tokens, API keys, session cookies without hardware binding) are **NOT** conformant as the sole authentication of an approval response |
+| OOB-5 | MUST | The Guardian **MUST** verify the hardware attestation on every approval response. Cached or assumed attestation is prohibited. The verification **MUST** confirm that the cryptographic proof was produced by a registered hardware authenticator belonging to an authorized human principal |
+| OOB-6 | MUST | Each approval response **MUST** be cryptographically bound to the specific request: the response **MUST** include a nonce (generated per OOB-8), the profile name, and the complete entry key list. The Guardian **MUST** reject any approval response where the bound fields do not match the pending request |
+| OOB-7 | MUST | Out-of-band approval **MUST** have a configurable timeout (default: 300 seconds). If no approval response is received within the timeout, the request **MUST** be denied |
+| OOB-8 | MUST | Approval request nonces **MUST** be generated by a CSPRNG with at least 128 bits of entropy. Each nonce **MUST** be single-use: the Guardian **MUST** invalidate it immediately upon receiving an approval response (approve or deny) or upon OOB-7 timeout expiry, whichever occurs first. The Guardian **MUST NOT** accept a second response for a previously-used or expired nonce; such responses **MUST** be rejected and logged at WARN level |
+| OOB-9 | MUST | Notification delivery failures **MUST** be logged and the access request **MUST** be denied with a diagnostic error. Failure diagnostics are internal only; error responses to the requesting tool **MUST** be indistinguishable from approval denial (see [TOKEN-15](09-access-control.md)) |
+| OOB-10 | MUST | Before sending a notification to a configured URL, the Guardian **MUST** validate the target URL against SSRF mitigations. Resolved IP addresses for the notification hostname **MUST NOT** be loopback (`127.0.0.0/8`, `::1`), link-local (`169.254.0.0/16`, `fe80::/10`), or private RFC 1918 ranges (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`) or RFC 4193 ranges (`fc00::/7`). Exceptions are permitted only for explicitly allowlisted internal endpoints configured by the human principal and documented in the conformance statement. DNS rebinding protection **MUST** be applied: the IP address **MUST** be validated after DNS resolution and **MUST** be re-validated if DNS TTL expires before the notification is delivered |
 
-### Webhook Payload Example
+> **Design note:** OOB-4 is the critical requirement. A notification channel (Slack, Teams, PagerDuty, email, custom dashboard) may use any delivery mechanism to inform the human that an approval is needed. But the *response* — the act of authorizing secret access — must prove that a human with physical possession of a registered hardware key made the decision. This separates *notification* (which can use software-authenticated channels) from *authorization* (which cannot). Stolen software tokens can forge notifications; they cannot forge hardware attestations.
 
-> **Note:** The following example illustrates a conformant webhook payload. The specific field names and structure are provided in [Annex A](../07-annexes/annex-a-protocol-details.md).
+### Notification Payload Example
+
+> **Note:** The following example illustrates a conformant notification payload. The specific field names and structure are provided in [Annex A](../07-annexes/annex-a-protocol-details.md).
 
 ```json
 {
@@ -3123,7 +3239,7 @@ For headless environments that still need interactive approval, implementations 
   "entries": ["db_host", "db_user", "db_password"],
   "verification_code": "ABCD-1234",
   "timestamp": "2026-02-16T12:00:00Z",
-  "callback_url": "https://guardian.internal/approval/abc123"
+  "approve_url": "https://guardian.internal/approval/a8f3...c9e1"
 }
 ```
 
@@ -3131,15 +3247,16 @@ For headless environments that still need interactive approval, implementations 
 
 ```
 1. Tool requests access (prompt_once or prompt_always profile in headless)
-2. Guardian sends webhook to configured endpoint (e.g., Slack, PagerDuty, custom service)
-3. Notification includes profile, entries, and verification code
-4. Human reviews and clicks Approve/Deny in notification
-5. Notification service calls Guardian callback URL
-6. Guardian grants or denies access
-7. Tool receives response
+2. Guardian sends notification to configured channel (e.g., Slack, PagerDuty, dashboard)
+3. Notification includes profile, entries, verification code, and approval URL
+4. Human reviews notification and navigates to approval endpoint
+5. Human authenticates approval with hardware key (FIDO2/WebAuthn assertion)
+6. Approval endpoint verifies hardware attestation and forwards to Guardian
+7. Guardian verifies attestation, nonce binding, and grants or denies access
+8. Tool receives response
 ```
 
-If the callback is not received within the configured timeout (WHOOK-7), the Guardian denies the request.
+If no hardware-attested approval response is received within the configured timeout (OOB-7), the Guardian denies the request.
 
 ## 10.7 Policy Configuration
 
@@ -3917,7 +4034,7 @@ All of Level 1 (§13.2), plus:
 |----|-------|------------|-------------|-----------|------------|
 | CONF-L2-1 | MUST | Token expiry | Tokens **MUST** support configurable TTL-based expiration (the `expires_at` attribute) | [TS-18](../01-foundations/03-threat-model.md#32-threat-scenarios) | TOKEN-5 ([§9.2](../03-architecture/09-access-control.md#92-token-structure)) |
 | CONF-L2-2 | MUST | Write-back | Tools **MUST** be able to write updated values back through the Guardian. Write operations **MUST** be governed by an independently configured write approval policy | [TS-5](../01-foundations/03-threat-model.md#32-threat-scenarios), [TS-10](../01-foundations/03-threat-model.md#32-threat-scenarios) | APPR-6 through APPR-11 ([§10.2](../03-architecture/10-approval-policies.md#102-write-approval-modes)), WRITE-1 through WRITE-6 ([§11](../03-architecture/11-secret-lifecycle.md)) |
-| CONF-L2-3 | MUST | Agent-independent approval channel | Approval **MUST** use a channel independent of the agent process per DLG-1: native OS dialogs, authenticated out-of-band services, MFA-gated web dashboards, or webhook-based approval. Terminal-based approval is no longer permitted at this level | [TS-3](../01-foundations/03-threat-model.md#32-threat-scenarios), [TS-9](../01-foundations/03-threat-model.md#32-threat-scenarios), [TS-16](../01-foundations/03-threat-model.md#32-threat-scenarios) | DLG-1 ([§6.3](../02-principles/06-trust-boundaries.md#63-boundary-3-approval-attestation-human--guardian)) |
+| CONF-L2-3 | MUST | Agent-independent approval channel | Approval **MUST** use a channel independent of the agent process per DLG-1: native OS dialogs, authenticated out-of-band services with hardware-attested approval responses, or MFA-gated web dashboards with hardware second factor. Terminal-based approval is no longer permitted at this level | [TS-3](../01-foundations/03-threat-model.md#32-threat-scenarios), [TS-9](../01-foundations/03-threat-model.md#32-threat-scenarios), [TS-16](../01-foundations/03-threat-model.md#32-threat-scenarios), [TS-22](../01-foundations/03-threat-model.md#32-threat-scenarios) | DLG-1 ([§6.3](../02-principles/06-trust-boundaries.md#63-boundary-3-approval-attestation-human--guardian)) |
 | CONF-L2-4 | SHOULD | Verification codes | Approval dialogs **SHOULD** display a verification code for anti-spoofing assurance per DLG-5. Deployments satisfying the anti-spoofing property through alternative mechanisms (MFA, authenticated OOB channels) **MAY** omit verification codes at this level | [TS-9](../01-foundations/03-threat-model.md#32-threat-scenarios) | DLG-5 ([§6.3](../02-principles/06-trust-boundaries.md#63-boundary-3-approval-attestation-human--guardian)), [§4.4](../01-foundations/04-core-concepts.md#44-approval-terms) |
 | CONF-L2-5 | MUST | Session caching | Session approval cache with configurable per-profile TTL **MUST** be supported. Session cache **MUST** be held in Guardian memory only; disk persistence is prohibited. Default TTL **MUST NOT** exceed 3600 seconds | -- | SESS-1 through SESS-8 ([§10.3](../03-architecture/10-approval-policies.md#103-session-approval-cache)) |
 | CONF-L2-6 | MUST | Full approval modes | All three read approval modes **MUST** be supported: `auto`, `prompt_once`, `prompt_always` | [TS-3](../01-foundations/03-threat-model.md#32-threat-scenarios), [TS-16](../01-foundations/03-threat-model.md#32-threat-scenarios) | APPR-1 through APPR-5 ([§10.1](../03-architecture/10-approval-policies.md#101-read-approval-modes)) |
@@ -3948,7 +4065,7 @@ All of Level 2 (§13.3), plus:
 | CONF-L3-6 | SHOULD | Rotation enforcement | Implementations **SHOULD** support credential rotation policy enforcement: configurable maximum credential age per profile, with alerts or automatic denial when rotation is overdue | [TS-18](../01-foundations/03-threat-model.md#32-threat-scenarios) | [§14.2](../05-reference/14-cryptographic-requirements.md#142-master-key-management) |
 | CONF-L3-7 | SHOULD | Out-of-band revocation | Token and session revocation **SHOULD** be supported via external channels (webhook, chat integration, authenticated API) in addition to the implementation's administrative interface | -- | TOKEN-13, TOKEN-27 ([§9.5](../03-architecture/09-access-control.md#95-token-lifecycle)) |
 | CONF-L3-8 | MUST | Mutual TLS | All Guardian communication over network transports **MUST** use mutual TLS (mTLS) for caller authentication in addition to token-based authentication | [TS-8b](../01-foundations/03-threat-model.md#32-threat-scenarios) | TOPO-2 ([§3.6.4](../01-foundations/03-threat-model.md#364-normative-requirements-for-remote-deployment)), TLS-2 ([§6.4](../02-principles/06-trust-boundaries.md#64-transport-security)) |
-| CONF-L3-9 | MUST | Webhook approval | Implementations **MUST** support webhook-based approval for headless environments per WHOOK-1 through WHOOK-8 | [TS-3](../01-foundations/03-threat-model.md#32-threat-scenarios) | HEAD-1 through HEAD-5 ([§10.5](../03-architecture/10-approval-policies.md#105-headless-operation)), WHOOK-1 through WHOOK-8 ([§10.6](../03-architecture/10-approval-policies.md#106-webhook-based-approval)) |
+| CONF-L3-9 | MUST | Hardware-attested out-of-band approval | Implementations **MUST** support hardware-attested out-of-band approval for headless environments per OOB-1 through OOB-10. Approval responses **MUST** be authenticated by a hardware-bound cryptographic factor (FIDO2/WebAuthn or equivalent per OOB-4) | [TS-3](../01-foundations/03-threat-model.md#32-threat-scenarios), [TS-22](../01-foundations/03-threat-model.md#32-threat-scenarios) | HEAD-1 through HEAD-5 ([§10.5](../03-architecture/10-approval-policies.md#105-headless-operation)), OOB-1 through OOB-10 ([§10.6](../03-architecture/10-approval-policies.md#106-out-of-band-approval)) |
 | CONF-L3-10 | MUST | Tool registration | Guardian **MUST** maintain a registry of authorized tool identities (binary hash, path, or code-signing certificate) and **MUST** refuse secret requests from unregistered tools | [TS-15](../01-foundations/03-threat-model.md#32-threat-scenarios) | [§3.5.1](../01-foundations/03-threat-model.md#351-tool-substitution-ts-15) |
 | CONF-L3-11 | MUST | Approval fatigue controls | Implementations **MUST** enforce configurable rate limits on approval requests per profile per time window. After a configurable number of approvals within a session, implementations **MUST** require escalated confirmation (e.g., re-entering a passphrase, biometric confirmation, or a mandatory delay before the Approve action becomes active) | [TS-17](../01-foundations/03-threat-model.md#32-threat-scenarios) | [§3.5.3](../01-foundations/03-threat-model.md#353-approval-fatigue-exploitation-ts-17) |
 | CONF-L3-12 | MUST | Verification codes | Approval dialogs **MUST** display a verification code for anti-spoofing assurance per DLG-5 | [TS-9](../01-foundations/03-threat-model.md#32-threat-scenarios) | DLG-5 ([§6.3](../02-principles/06-trust-boundaries.md#63-boundary-3-approval-attestation-human--guardian)) |
@@ -4042,7 +4159,7 @@ Level 3 Requirements (if claiming Level 3):
   CONF-L3-6  Rotation enforcement     [Conformant / Deviation]
   CONF-L3-7  Out-of-band revocation   [Conformant / Deviation]
   CONF-L3-8  Mutual TLS              [Conformant / N/A]
-  CONF-L3-9  Webhook approval         [Conformant / N/A]
+  CONF-L3-9  Out-of-band approval     [Conformant / N/A]
   CONF-L3-10 Tool registration        [Conformant / N/A]
   CONF-L3-11 Approval fatigue controls [Conformant / N/A]
   CONF-L3-12 Verification codes       [Conformant / N/A]
@@ -5129,7 +5246,7 @@ Each criterion has:
 
 **What to look for:**
 - Access denied (fail closed)
-- Optional webhook/Slack integration for remote approval
+- Optional hardware-attested out-of-band channel for remote approval (see §10.6)
 - Clear error message to the tool
 
 **Red flags:**
@@ -5950,7 +6067,7 @@ Tool: "Access granted."
 Use an agent-independent approval channel:
 - Native OS dialogs (agent cannot read or interact with native windows)
 - Trusted communication platforms (Slack, Teams, PagerDuty): authenticated out-of-band channel the agent cannot access
-- MFA-gated web dashboards or webhook-based approval
+- MFA-gated web dashboards with hardware second factor, or hardware-attested out-of-band approval
 - Verification codes prevent spoofing (when used)
 - Default to deny, not approve
 
@@ -6180,7 +6297,7 @@ Store logs in tamper-evident format. Monitor for anomalies.
 | Agent as secret holder | Agent orchestrates, tools consume |
 | Trust all tools | Per-tool tokens, scoped access |
 | Encrypt and forget | Key management + access control |
-| In-terminal approval | Agent-independent channel (native OS dialog, trusted communication platform, or webhook-based approval) |
+| In-terminal approval | Agent-independent channel (native OS dialog, trusted communication platform, or hardware-attested out-of-band approval) |
 | Global session approval | Per-profile session approval |
 | Long-lived tokens | Appropriate TTLs + rotation |
 | Bypass for performance | Optimize the secure path |
